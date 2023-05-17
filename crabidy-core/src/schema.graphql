@@ -1,0 +1,81 @@
+type Queue {
+  tracks: [Track!]!
+  current: Int!
+}
+
+type Mutation {
+  playpause(track: InputTrack!): ActiveTrack!
+  stop(track: InputTrack!): ActiveTrack!
+  previous(track: InputTrack!): ActiveTrack!
+  next(track: InputTrack!): ActiveTrack!
+  seek(track: InputTrack!, millis: Int!): ActiveTrack!
+  append(tracks: [InputTrack!]!): Success!
+  queue(tracks: [InputTrack!]!): Success!
+  replace(tracks: [InputTrack!]!): Success!
+  delete(track: InputTrack!): Success!
+  clear(track: InputTrack!): Success!
+}
+
+type Album {
+  title: String!
+  releaseDate: String
+}
+
+enum PlayState {
+  BUFFERING
+  PLAYING
+  PAUSED
+  STOPPED
+}
+
+type Subscription {
+  queue: Queue!
+  activeTrack: ActiveTrack!
+}
+
+type Artist {
+  name: String!
+}
+
+type ActiveTrack {
+  track: Track
+  completion: Int!
+  playState: PlayState!
+}
+
+type ItemList {
+  name: String!
+  uuid: String!
+  provider: String!
+  tracks(refresh: Boolean!): [Track!]
+  children(refresh: Boolean!): [ItemList!]
+  isQueable: Boolean!
+}
+
+type Track {
+  title: String!
+  uuid: String!
+  duration: Int
+  album: Album
+  artist: Artist
+  provider: String!
+}
+
+enum Success {
+  APPENDING
+  REPLACING
+  QUEUING
+  DELETING
+  CLEARING
+}
+
+input InputTrack {
+  uuid: String!
+  provider: String!
+}
+
+schema {
+  query: ItemList
+  mutation: Mutation
+  subscription: Subscription
+}
