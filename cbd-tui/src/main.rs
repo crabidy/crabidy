@@ -5,6 +5,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use flume::{Receiver, Sender};
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Corner, Direction, Layout},
@@ -15,7 +16,7 @@ use ratatui::{
 };
 use std::{
     error::Error,
-    io, println,
+    io, println, thread,
     time::{Duration, Instant},
     vec,
 };
@@ -134,39 +135,57 @@ impl App {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    task::spawn_blocking(run_ui).await.unwrap();
+enum Message {
+    Quit,
+    LibraryData(String),
 }
 
-fn run_ui() {
-    // let operation = graphql::queries::AllFilmsQuery::build(());
-    //
-    // let client = reqwest::Client::new();
-    //
-    // let response = client
-    //     .post("https://swapi-graphql.netlify.app/.netlify/functions/index")
-    //     .run_graphql(operation)
-    //     .await
-    //     .unwrap();
-    //
-    // if let Some(data) = response.data {
-    //     if let Some(films) = data.all_films {
-    //         if let Some(list) = films.films {
-    //             list.iter().for_each(|mut f| {
-    //                 if let Some(film) = f {
-    //                     if let Some(title) = &film.title {
-    //                         app.library.items.push(ListNode {
-    //                             name: title.to_string(),
-    //                             children: None,
-    //                         })
-    //                     }
-    //                 }
-    //             })
-    //         }
-    //     }
-    // }
+#[tokio::main]
+async fn main() {
+    let (ui_tx, rx): (Sender<Message>, Receiver<Message>) = flume::unbounded();
+    let (tx, ui_rx): (Sender<Message>, Receiver<Message>) = flume::unbounded();
 
+    thread::spawn(|| {
+        run_ui(ui_tx, ui_rx);
+    });
+
+    // FIXME: move into some request function
+    let operation = graphql::queries::AllFilmsQuery::build(());
+
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post("https://swapi-graphql.netlify.app/.netlify/functions/index")
+        .run_graphql(operation)
+        .await
+        .unwrap();
+
+    if let Some(data) = response.data {
+        if let Some(films) = data.all_films {
+            if let Some(list) = films.films {
+                // FIXME: Collect into array/vector instead and send it all over at once
+                list.iter().for_each(|mut f| {
+                    if let Some(film) = f {
+                        if let Some(title) = &film.title {
+                            tx.send(Message::LibraryData(title.to_string()));
+                        }
+                    }
+                })
+            }
+        }
+    }
+
+    loop {
+        match rx.recv() {
+            Ok(Message::Quit) => {
+                break;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn run_ui(tx: Sender<Message>, rx: Receiver<Message>) {
     // setup terminal
     enable_raw_mode().unwrap();
     let mut stdout = io::stdout();
@@ -176,32 +195,56 @@ fn run_ui() {
 
     // create app and run it
     let mut app = App::new();
+    let tick_rate = Duration::from_millis(100);
+    let mut last_tick = Instant::now();
 
     loop {
+        for message in rx.try_iter() {
+            if let Message::LibraryData(title) = message {
+                app.library.items.push(ListNode {
+                    name: title,
+                    children: None,
+                });
+            }
+        }
+
         terminal.draw(|f| ui(f, &mut app)).unwrap();
 
-        if let Event::Key(key) = event::read().unwrap() {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Char('q') => break,
-                    KeyCode::Char('j') => {
-                        if app.library.is_focused() {
-                            app.library.next();
-                        } else {
-                            app.queue.next();
+        let timeout = tick_rate
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+
+        if crossterm::event::poll(timeout).unwrap() {
+            if let Event::Key(key) = event::read().unwrap() {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') => {
+                            tx.send(Message::Quit);
+                            break;
                         }
-                    }
-                    KeyCode::Char('k') => {
-                        if app.library.is_focused() {
-                            app.library.prev();
-                        } else {
-                            app.queue.prev();
+                        KeyCode::Char('j') => {
+                            if app.library.is_focused() {
+                                app.library.next();
+                            } else {
+                                app.queue.next();
+                            }
                         }
+                        KeyCode::Char('k') => {
+                            if app.library.is_focused() {
+                                app.library.prev();
+                            } else {
+                                app.queue.prev();
+                            }
+                        }
+                        KeyCode::Tab => app.cycle_active(),
+                        _ => {}
                     }
-                    KeyCode::Tab => app.cycle_active(),
-                    _ => {}
                 }
             }
+        }
+
+        if last_tick.elapsed() >= tick_rate {
+            last_tick = Instant::now();
         }
     }
 
