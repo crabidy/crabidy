@@ -7,19 +7,11 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.68"
-futures = "0.3.28"
-graphql_client = "0.12.0"
-juniper = { git = "https://github.com/graphql-rust/juniper.git", branch = "master" }
-juniper_subscriptions = { git = "https://github.com/graphql-rust/juniper.git", branch = "master" }
 prost = "0.11"
 serde = "1.0.163"
 tonic = "0.9"
 
 [build-dependencies]
 async-trait = "0.1.68"
-futures = "0.3.28"
-graphql_client = "0.12.0"
-juniper = { git = "https://github.com/graphql-rust/juniper.git", branch = "master" }
-juniper_subscriptions = { git = "https://github.com/graphql-rust/juniper.git", branch = "master" }
 serde = "1.0.163"
 tonic-build = "0.9"

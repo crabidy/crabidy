@@ -1,25 +1,13 @@
 pub mod proto;
 
 use async_trait::async_trait;
-use futures::Stream;
-use juniper::{
-    graphql_object, graphql_subscription, FieldError, FieldResult, GraphQLEnum, GraphQLInputObject,
-    GraphQLObject, RootNode,
-};
-use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 #[async_trait]
-pub trait ProviderClient: Send + Sync {
+pub trait ProviderClient: std::fmt::Debug + Send + Sync {
     async fn get_urls_for_track(&self, track_uuid: &str) -> Result<Vec<String>, ProviderError>;
-    async fn get_item_lists_full(&self) -> Result<Vec<ItemList>, ProviderError>;
-    async fn get_item_lists_partial(
-        &self,
-        list_uuid: String,
-    ) -> Result<Vec<ItemList>, ProviderError>;
-    async fn get_item_list_partial_without_children(
-        &self,
-        list_uuid: String,
-    ) -> Result<ItemList, ProviderError>;
+    fn get_root_list(&self) -> ItemList;
+    async fn get_item_list(&self, list_uuid: &str, depth: usize)
+        -> Result<ItemList, ProviderError>;
 }
 
 #[derive(Clone, Debug, Hash)]
@@ -32,47 +20,39 @@ pub enum ProviderError {
 pub struct ItemList {
     pub name: String,
     pub uuid: String,
-    pub provider: String,
+    pub parent: String,
     pub tracks: Option<Vec<Track>>,
-    pub children: Option<Vec<ItemList>>,
+    pub children: Vec<ItemList>,
     pub is_queable: bool,
-    without_children: bool,
-}
-
-#[graphql_object(context = Context)]
-impl ItemList {
-    fn name(&self) -> &str {
-        &self.name
-    }
-    fn uuid(&self) -> &str {
-        &self.uuid
-    }
-    fn provider(&self) -> &str {
-        &self.provider
-    }
-    //TODO: Be smarter than clone here
-    fn tracks(&self, refresh: bool) -> Option<Vec<Track>> {
-        self.tracks.clone()
-    }
-    //TODO: Be smarter than clone here
-    fn children(&self, refresh: bool) -> Option<Vec<ItemList>> {
-        self.children.clone()
-    }
-    fn is_queable(&self) -> bool {
-        self.is_queable
-    }
+    pub ephemeral: bool,
+    pub is_partial: bool,
 }
 
 impl ItemList {
     pub fn new() -> Self {
         Self {
-            name: "root".to_string(),
-            uuid: "root".to_string(),
-            provider: "root".to_string(),
+            name: "/".to_string(),
+            uuid: "/".to_string(),
+            parent: "".to_string(),
             tracks: None,
-            children: None,
+            children: Vec::new(),
             is_queable: false,
-            without_children: true,
+            ephemeral: false,
+            is_partial: true,
+        }
+    }
+    pub fn replace_sublist(&mut self, sublist: &Self) {
+        if self.uuid == sublist.uuid {
+            self.name = sublist.name.clone();
+            self.tracks = sublist.tracks.clone();
+            self.children = sublist.children.clone();
+            self.is_queable = sublist.is_queable;
+            self.ephemeral = sublist.ephemeral;
+            self.is_partial = sublist.is_partial;
+            return;
+        }
+        for child in self.children.iter_mut() {
+            child.replace_sublist(sublist);
         }
     }
     pub fn flatten(&self) -> Vec<Track> {
@@ -80,16 +60,21 @@ impl ItemList {
         if let Some(own_tracks) = &self.tracks {
             tracks.extend(own_tracks.clone());
         }
-        if let Some(childs) = &self.children {
-            for child in childs {
-                tracks.extend(child.flatten());
-            }
+        for child in self.children.iter() {
+            tracks.extend(child.flatten());
         }
         tracks
     }
 }
 
-#[derive(Clone, Debug, GraphQLEnum)]
+#[derive(Clone, Debug)]
+struct ItemListFilter {
+    uuid_filter: Option<String>,
+    name_filter: Option<String>,
+    provider_filter: Option<String>,
+}
+
+#[derive(Clone, Debug)]
 enum PlayState {
     Buffering,
     Playing,
@@ -97,7 +82,7 @@ enum PlayState {
     Stopped,
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug)]
 pub struct Track {
     pub title: String,
     pub uuid: String,
@@ -107,19 +92,19 @@ pub struct Track {
     pub provider: String,
 }
 
-#[derive(Clone, Debug, GraphQLInputObject)]
+#[derive(Clone, Debug)]
 pub struct InputTrack {
     pub uuid: String,
     pub provider: String,
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug)]
 pub struct Album {
     pub title: String,
     pub release_date: Option<String>,
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug)]
 pub struct Artist {
     pub name: String,
 }
@@ -129,7 +114,7 @@ pub enum QueueError {
     ItemListNotQueuable,
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug)]
 pub struct Queue {
     pub tracks: Vec<Track>,
     current: i32,
@@ -215,58 +200,6 @@ impl Queue {
 }
 
 #[derive(Clone, Debug)]
-pub struct Mutation;
-
-impl Mutation {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-#[graphql_object(context = Context)]
-impl Mutation {
-    fn playpause(&self, track: InputTrack) -> FieldResult<ActiveTrack> {
-        Ok(ActiveTrack::new())
-    }
-    fn stop(&self, track: InputTrack) -> FieldResult<ActiveTrack> {
-        Ok(ActiveTrack::new())
-    }
-    fn previous(&self, track: InputTrack) -> FieldResult<ActiveTrack> {
-        Ok(ActiveTrack::new())
-    }
-    fn next(&self, track: InputTrack) -> FieldResult<ActiveTrack> {
-        Ok(ActiveTrack::new())
-    }
-    fn seek(&self, track: InputTrack, millis: i32) -> FieldResult<ActiveTrack> {
-        Ok(ActiveTrack::new())
-    }
-    fn append(&self, tracks: Vec<InputTrack>) -> FieldResult<Success> {
-        Ok(Success::Appending)
-    }
-    fn queue(&self, tracks: Vec<InputTrack>) -> FieldResult<Success> {
-        Ok(Success::Queuing)
-    }
-    fn replace(&self, tracks: Vec<InputTrack>) -> FieldResult<Success> {
-        Ok(Success::Replacing)
-    }
-    fn delete(&self, track: InputTrack) -> FieldResult<Success> {
-        Ok(Success::Deleting)
-    }
-    fn clear(&self, track: InputTrack) -> FieldResult<Success> {
-        Ok(Success::Clearing)
-    }
-}
-
-#[derive(Clone, Debug, GraphQLEnum)]
-enum Success {
-    Appending,
-    Replacing,
-    Queuing,
-    Deleting,
-    Clearing,
-}
-
-#[derive(Clone, Debug, GraphQLObject)]
 pub struct ActiveTrack {
     track: Option<Track>,
     completion: i32,
@@ -282,49 +215,3 @@ impl ActiveTrack {
         }
     }
 }
-
-type ActiveTrackStream = Pin<Box<dyn Stream<Item = Result<ActiveTrack, FieldError>> + Send>>;
-type QueueStream = Pin<Box<dyn Stream<Item = Result<Queue, FieldError>> + Send>>;
-
-#[derive(Clone, Debug)]
-pub struct Subscription {
-    queue: Queue,
-    active_track: Option<ActiveTrack>,
-}
-
-#[graphql_subscription(context = Context)]
-impl Subscription {
-    async fn queue() -> QueueStream {
-        let stream = futures::stream::iter(vec![Ok(Queue::new())]);
-        Box::pin(stream)
-    }
-    async fn active_track() -> ActiveTrackStream {
-        let stream = futures::stream::iter(vec![Ok(ActiveTrack::new())]);
-        Box::pin(stream)
-    }
-}
-
-impl Subscription {
-    pub fn new() -> Self {
-        Self {
-            queue: Queue::new(),
-            active_track: None,
-        }
-    }
-}
-
-pub struct Context {
-    clients: HashMap<String, Arc<dyn ProviderClient>>,
-    queue: Queue,
-}
-
-impl Context {
-    pub fn new(clients: HashMap<String, Arc<dyn ProviderClient>>) -> Self {
-        let queue = Queue::new();
-        Self { clients, queue }
-    }
-}
-
-impl juniper::Context for Context {}
-
-pub type Schema = RootNode<'static, ItemList, Mutation, Subscription>;
