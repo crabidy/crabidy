@@ -1,0 +1,35 @@
+syntax = "proto3";
+package crabidy;
+
+service Library {
+  rpc GetLibraryNode (LibraryNodeRequest) returns (LibraryNodeResponse);
+}
+
+// To signal whether it's loading data (for frontend only probably)
+enum LibraryNodeState {
+  LIBRARY_NODE_STATE_UNSPECIFIED = 0;
+  LIBRARY_NODE_STATE_PENDING = 1;
+  LIBRARY_NODE_STATE_DONE = 2;
+}
+
+message Track {
+  // Including provider
+  string uuid = 1;
+  string artist = 2;
+  string title = 3;
+}
+
+message LibraryNodeRequest {
+  string uuid = 1;
+}
+
+message LibraryNodeResponse {
+  // Including provider
+  string uuid = 1;
+  string name = 2;
+  repeated string children = 3;
+  optional string parent = 4;
+  LibraryNodeState state = 5;
+  repeated Track tracks = 6;
+  bool is_queable = 7;
+}

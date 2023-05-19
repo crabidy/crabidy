@@ -5,7 +5,8 @@ use std::io::prelude::*;
 #[path = "src/lib.rs"]
 mod lib;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // --- OLD JUNIPER STUFF ---
     // let (res, _errors) = juniper::introspect(
     //     &lib::Schema::new(
     //         lib::ItemList::new(),
@@ -29,4 +30,8 @@ fn main() {
 
     let mut file = File::create("src/schema.graphql").unwrap();
     file.write_all(schema_str.as_bytes()).unwrap();
+
+    // --- NEW TONIC STUFF ---
+    tonic_build::compile_protos("proto/crabidy.proto")?;
+    Ok(())
 }
