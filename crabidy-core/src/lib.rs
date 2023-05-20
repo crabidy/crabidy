@@ -2,6 +2,8 @@ pub mod proto;
 
 use async_trait::async_trait;
 
+use proto::crabidy::LibraryNode;
+
 #[async_trait]
 pub trait ProviderClient: std::fmt::Debug + Send + Sync {
     async fn get_urls_for_track(&self, track_uuid: &str) -> Result<Vec<String>, ProviderError>;

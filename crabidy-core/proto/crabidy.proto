@@ -5,11 +5,21 @@ service Library {
   rpc GetLibraryNode (LibraryNodeRequest) returns (LibraryNodeResponse);
 }
 
-// To signal whether it's loading data (for frontend only probably)
+// To signal whether it's loading data (for frontend only probably -
+// could also be used for clients?)
 enum LibraryNodeState {
   LIBRARY_NODE_STATE_UNSPECIFIED = 0;
   LIBRARY_NODE_STATE_PENDING = 1;
   LIBRARY_NODE_STATE_DONE = 2;
+}
+
+message Album {
+  string title = 1;
+  optional string release_date = 2;
+}
+
+message Artist {
+  string name = 1;
 }
 
 message Track {
@@ -17,13 +27,10 @@ message Track {
   string uuid = 1;
   string artist = 2;
   string title = 3;
+  optional uint32 duration = 4;
 }
 
-message LibraryNodeRequest {
-  string uuid = 1;
-}
-
-message LibraryNodeResponse {
+message LibraryNode {
   // Including provider
   string uuid = 1;
   string name = 2;
@@ -32,4 +39,12 @@ message LibraryNodeResponse {
   LibraryNodeState state = 5;
   repeated Track tracks = 6;
   bool is_queable = 7;
+}
+
+message LibraryNodeRequest {
+  string uuid = 1;
+}
+
+message LibraryNodeResponse {
+  LibraryNode node = 1;
 }
