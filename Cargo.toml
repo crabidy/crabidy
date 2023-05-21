@@ -1,2 +1,2 @@
 [workspace]
-members = ["crabidy-core", "cbd-tui"]
+members = ["crabidy-core", "crabidy", "cbd-tui"]

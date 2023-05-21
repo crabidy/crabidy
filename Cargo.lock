@@ -187,6 +187,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabidy"
+version = "0.1.0"
+dependencies = [
+ "crabidy-core",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
 name = "crabidy-core"
 version = "0.1.0"
 dependencies = [
