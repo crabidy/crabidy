@@ -1,12 +1,13 @@
 syntax = "proto3";
-package crabidy;
+package crabidy.v1;
 
-service Library {
-  rpc GetLibraryNode (LibraryNodeRequest) returns (LibraryNodeResponse);
+service LibraryService {
+  rpc GetLibraryNode(GetLibraryNodeRequest) returns (GetLibraryNodeResponse);
+  rpc GetTrack(GetTrackRequest) returns (GetTrackResponse);
 }
 
 // To signal whether it's loading data (for frontend only probably -
-// could also be used for clients?)
+// could also be used for fetching from providers?)
 enum LibraryNodeState {
   LIBRARY_NODE_STATE_UNSPECIFIED = 0;
   LIBRARY_NODE_STATE_PENDING = 1;
@@ -41,10 +42,18 @@ message LibraryNode {
   bool is_queable = 7;
 }
 
-message LibraryNodeRequest {
+message GetLibraryNodeRequest {
   string uuid = 1;
 }
 
-message LibraryNodeResponse {
+message GetLibraryNodeResponse {
   LibraryNode node = 1;
+}
+
+message GetTrackRequest {
+  string uuid = 1;
+}
+
+message GetTrackResponse {
+  Track track = 1;
 }

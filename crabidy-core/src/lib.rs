@@ -2,7 +2,7 @@ pub mod proto;
 
 use async_trait::async_trait;
 
-use proto::crabidy::LibraryNode;
+
 
 #[async_trait]
 pub trait ProviderClient: std::fmt::Debug + Send + Sync {
