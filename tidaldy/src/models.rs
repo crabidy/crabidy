@@ -188,6 +188,7 @@ impl From<Track> for crabidy_core::proto::crabidy::Track {
             uuid: track.id.to_string(),
             title: track.title,
             artist: track.artist.name,
+            duration: Some(track.duration as u32),
         }
     }
 }
@@ -198,6 +199,7 @@ impl From<&Track> for crabidy_core::proto::crabidy::Track {
             uuid: track.id.to_string(),
             title: track.title.clone(),
             artist: track.artist.name.clone(),
+            duration: Some(track.duration as u32),
         }
     }
 }
@@ -298,7 +300,7 @@ pub struct PlaylistAndFavorite {
     pub playlist: Playlist,
 }
 
-impl From<PlaylistAndFavorite> for crabidy_core::proto::crabidy::LibraryNodeResponse {
+impl From<PlaylistAndFavorite> for crabidy_core::proto::crabidy::LibraryNode {
     fn from(a: PlaylistAndFavorite) -> Self {
         a.playlist.into()
     }
@@ -327,9 +329,9 @@ pub struct Playlist {
     pub last_item_added_at: Option<String>,
 }
 
-impl From<Playlist> for crabidy_core::proto::crabidy::LibraryNodeResponse {
+impl From<Playlist> for crabidy_core::proto::crabidy::LibraryNode {
     fn from(a: Playlist) -> Self {
-        crabidy_core::proto::crabidy::LibraryNodeResponse {
+        crabidy_core::proto::crabidy::LibraryNode {
             name: a.title,
             uuid: format!("playlist:{}", a.uuid),
             tracks: Vec::new(),

@@ -53,10 +53,10 @@ impl crabidy_core::ProviderClient for Client {
         Ok(manifest.urls)
     }
 
-    fn get_library_root(&self) -> crabidy_core::proto::crabidy::LibraryNodeResponse {
-        let global_root = crabidy_core::proto::crabidy::LibraryNodeResponse::new();
+    fn get_library_root(&self) -> crabidy_core::proto::crabidy::LibraryNode {
+        let global_root = crabidy_core::proto::crabidy::LibraryNode::new();
         let children = vec!["userplaylists".to_string()];
-        crabidy_core::proto::crabidy::LibraryNodeResponse {
+        crabidy_core::proto::crabidy::LibraryNode {
             uuid: "tidal".to_string(),
             name: "tidal".to_string(),
             parent: Some(format!("{}", global_root.uuid)),
@@ -70,16 +70,15 @@ impl crabidy_core::ProviderClient for Client {
     async fn get_library_node(
         &self,
         uuid: &str,
-    ) -> Result<crabidy_core::proto::crabidy::LibraryNodeResponse, crabidy_core::ProviderError>
-    {
+    ) -> Result<crabidy_core::proto::crabidy::LibraryNode, crabidy_core::ProviderError> {
         let Some(user_id) = self.settings.login.user_id.clone() else {
           return Err(crabidy_core::ProviderError::UnknownUser)
     };
         let (module, uuid) = split_uuid(uuid);
         let node = match module.as_str() {
             "userplaylists" => {
-                let global_root = crabidy_core::proto::crabidy::LibraryNodeResponse::new();
-                let mut node = crabidy_core::proto::crabidy::LibraryNodeResponse {
+                let global_root = crabidy_core::proto::crabidy::LibraryNode::new();
+                let mut node = crabidy_core::proto::crabidy::LibraryNode {
                     uuid: "userplaylists".to_string(),
                     name: "playlists".to_string(),
                     parent: Some(format!("{}", global_root.uuid)),
@@ -97,7 +96,7 @@ impl crabidy_core::ProviderClient for Client {
                 node
             }
             "playlist" => {
-                let mut node: crabidy_core::proto::crabidy::LibraryNodeResponse =
+                let mut node: crabidy_core::proto::crabidy::LibraryNode =
                     self.get_playlist(&uuid).await?.into();
                 let tracks: Vec<crabidy_core::proto::crabidy::Track> = self
                     .get_playlist_tracks(&uuid)

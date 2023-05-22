@@ -2,8 +2,6 @@ pub mod proto;
 
 use async_trait::async_trait;
 
-
-
 #[async_trait]
 pub trait ProviderClient: std::fmt::Debug + Send + Sync {
     async fn init(raw_toml_settings: &str) -> Result<Self, ProviderError>
@@ -11,11 +9,11 @@ pub trait ProviderClient: std::fmt::Debug + Send + Sync {
         Self: Sized;
     fn settings(&self) -> String;
     async fn get_urls_for_track(&self, track_uuid: &str) -> Result<Vec<String>, ProviderError>;
-    fn get_library_root(&self) -> proto::crabidy::LibraryNodeResponse;
+    fn get_library_root(&self) -> proto::crabidy::LibraryNode;
     async fn get_library_node(
         &self,
         list_uuid: &str,
-    ) -> Result<proto::crabidy::LibraryNodeResponse, ProviderError>;
+    ) -> Result<proto::crabidy::LibraryNode, ProviderError>;
 }
 
 #[derive(Clone, Debug, Hash)]
@@ -27,7 +25,7 @@ pub enum ProviderError {
     Other,
 }
 
-impl proto::crabidy::LibraryNodeResponse {
+impl proto::crabidy::LibraryNode {
     pub fn new() -> Self {
         Self {
             uuid: "/".to_string(),
