@@ -81,7 +81,7 @@ impl crabidy_core::ProviderClient for Client {
                 let mut node = crabidy_core::proto::crabidy::LibraryNode {
                     uuid: "userplaylists".to_string(),
                     name: "playlists".to_string(),
-                    parent: Some(format!("{}", global_root.uuid)),
+                    parent: Some("tidal".to_string()),
                     state: crabidy_core::proto::crabidy::LibraryNodeState::Unspecified as i32,
                     tracks: Vec::new(),
                     children: Vec::new(),
@@ -91,7 +91,8 @@ impl crabidy_core::ProviderClient for Client {
                     .get_users_playlists_and_favorite_playlists(&user_id)
                     .await?
                 {
-                    node.children.push(playlist.playlist.uuid);
+                    node.children
+                        .push(format!("playlist:{}", playlist.playlist.uuid));
                 }
                 node
             }
@@ -117,8 +118,8 @@ impl crabidy_core::ProviderClient for Client {
 fn split_uuid(uuid: &str) -> (String, String) {
     let mut split = uuid.splitn(2, ':');
     (
-        split.next().unwrap().to_string(),
-        split.next().unwrap().to_string(),
+        split.next().unwrap_or("").to_string(),
+        split.next().unwrap_or("").to_string(),
     )
 }
 
@@ -360,10 +361,11 @@ impl Client {
     pub async fn login_web(&mut self) -> Result<(), ClientError> {
         let code_response = self.get_device_code().await?;
         let now = Instant::now();
-        println!("{}", code_response.verification_uri_complete);
+        println!("https://{}", code_response.verification_uri_complete);
         while now.elapsed().as_secs() <= code_response.expires_in {
             let login = self.check_auth_status(&code_response.device_code).await;
             if login.is_err() {
+                // println!("login failed with {:?}", login);
                 sleep(Duration::from_secs(code_response.interval)).await;
                 continue;
             }
@@ -374,7 +376,7 @@ impl Client {
             self.settings.login.access_token = Some(login_results.access_token);
             self.settings.login.refresh_token = login_results.refresh_token;
             self.settings.login.expires_after = Some(login_results.expires_in + timestamp);
-            self.settings.login.user_id = Some(login_results.user.user_id);
+            self.settings.login.user_id = Some(login_results.user.user_id.to_string());
             self.settings.login.country_code = Some(login_results.user.country_code);
             return Ok(());
         }
@@ -493,6 +495,7 @@ impl Client {
             .header("Content-Type", "application/x-www-form-urlencoded")
             .send()
             .await?;
+        // println!("{:#?} -> {}", res.status(), res.status().is_success());
         if !res.status().is_success() {
             if res.status().is_client_error() {
                 return Err(ClientError::AuthError(format!(

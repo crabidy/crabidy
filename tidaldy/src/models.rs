@@ -4,12 +4,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-pub trait Paginated {
-    fn offset(&self) -> usize;
-    fn limit(&self) -> usize;
-    fn total(&self) -> usize;
-}
-
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Page<T> {
@@ -17,27 +11,6 @@ pub struct Page<T> {
     pub offset: usize,
     pub total_number_of_items: usize,
     pub items: Vec<T>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtistSearchPage {
-    pub limit: i64,
-    pub offset: i64,
-    pub total_number_of_items: i64,
-    pub items: Vec<Item>,
-}
-
-impl Paginated for ArtistSearchPage {
-    fn offset(&self) -> usize {
-        self.offset as usize
-    }
-    fn limit(&self) -> usize {
-        self.limit as usize
-    }
-    fn total(&self) -> usize {
-        self.total_number_of_items as usize
-    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -127,7 +100,7 @@ pub struct RefreshResponse {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all(deserialize = "camelCase"))]
 pub struct UserResponse {
-    pub user_id: String,
+    pub user_id: u64,
     pub country_code: String,
 }
 
@@ -347,29 +320,6 @@ impl From<Playlist> for crabidy_core::proto::crabidy::LibraryNode {
 #[serde(rename_all = "camelCase")]
 pub struct Creator {
     pub id: i64,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlaylistTracksPage {
-    pub limit: usize,
-    pub offset: usize,
-    pub total_number_of_items: usize,
-    pub items: Vec<PlaylistTrack>,
-}
-
-impl Paginated for PlaylistTracksPage {
-    fn offset(&self) -> usize {
-        self.offset
-    }
-
-    fn limit(&self) -> usize {
-        self.limit
-    }
-
-    fn total(&self) -> usize {
-        self.total_number_of_items
-    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
