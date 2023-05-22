@@ -1,9 +1,29 @@
 syntax = "proto3";
 package crabidy.v1;
 
-service LibraryService {
+service CrabidyService {
+  // Library
   rpc GetLibraryNode(GetLibraryNodeRequest) returns (GetLibraryNodeResponse);
   rpc GetTrack(GetTrackRequest) returns (GetTrackResponse);
+
+  // Queue
+  rpc QueueTrack(QueueTrackRequest) returns (EmptyResponse);
+  rpc QueueLibraryNode(QueueLibraryNodeRequest) returns (EmptyResponse);
+  rpc ReplaceWithTrack(ReplaceWithTrackRequest) returns (EmptyResponse);
+  rpc ReplaceWithNode(ReplaceWithNodeRequest) returns (EmptyResponse);
+  rpc AppendTrack(AppendTrackRequest) returns (EmptyResponse);
+  rpc AppendNode(AppendNodeRequest) returns (EmptyResponse);
+  rpc RemoveTracks(RemoveTracksRequest) returns (EmptyResponse);
+  rpc SetCurrentTrack(SetCurrentTrackRequest) returns (EmptyResponse);
+  rpc GetQueueUpdates(GetQueueUpdatesRequest) returns (stream GetQueueUpdatesResponse);
+  rpc GetQueue(EmptyRequest) returns (GetQueueResponse);
+  rpc SaveQueue(SaveQueueRequest) returns (EmptyResponse);
+
+  // Playback
+  rpc TogglePlay(EmptyRequest) returns (EmptyResponse);
+  rpc Stop(EmptyRequest) returns (EmptyResponse);
+  rpc GetActiveTrack(EmptyRequest) returns (GetActiveTrackResponse);
+  rpc GetTrackUpdates(GetTrackUpdatesRequest) returns (stream GetTrackUpdatesResponse);
 }
 
 // To signal whether it's loading data (for frontend only probably -
@@ -58,22 +78,8 @@ message GetTrackResponse {
   Track track = 1;
 }
 
-service Queue {
-  rpc QueueTrack (QueueTrackRequest) returns (EmptyResponse);
-  rpc QueueLibraryNode (QueueNodeRequest) returns (EmptyResponse);
-  rpc ReplaceWithTrack (QueueTrackRequest) returns (EmptyResponse);
-  rpc ReplaceWithNode (QueueNodeRequest) returns (EmptyResponse);
-  rpc AppendTrack (QueueTrackRequest) returns (EmptyResponse);
-  rpc AppendNode (QueueNodeRequest) returns (EmptyResponse);
-  rpc RemoveTracks (RemoveTracksRequest) returns (EmptyResponse);
-  rpc SetCurrentTrack (SetCurrentTrackRequest) returns (EmptyResponse);
-  rpc GetQueueUpdates (QueueUpdatesRequest) returns (stream QueueUpdateResponse);
-  rpc GetQueue(EmptyRequest) returns (CurrentQueue);
-  rpc SaveQueue (QueueSaveRequest) returns (EmptyResponse);
-}
-
-message CurrentQueue {
-  uint64 timestamp =1;
+message Queue {
+  uint64 timestamp = 1;
   uint32 current = 2;
   repeated Track tracks = 3;
 }
@@ -87,7 +93,23 @@ message QueueTrackRequest {
   string uuid = 1;
 }
 
-message QueueNodeRequest {
+message ReplaceWithTrackRequest {
+  string uuid = 1;
+}
+
+message AppendTrackRequest {
+  string uuid = 1;
+}
+
+message QueueLibraryNodeRequest {
+  string uuid = 1;
+}
+
+message ReplaceWithNodeRequest {
+  string uuid = 1;
+}
+
+message AppendNodeRequest {
   string uuid = 1;
 }
 
@@ -99,41 +121,36 @@ message SetCurrentTrackRequest {
   uint32 position = 1;
 }
 
-
-message QueueUpdatesRequest {
-  uint64 timestamp =2;
+message GetQueueUpdatesRequest {
+  uint64 timestamp = 2;
 }
 
-message QueueUpdateResponse {
-  oneof QueueUpdateResult{
-    CurrentQueue full = 1;
+message GetQueueResponse {
+  Queue queue = 1;
+}
+
+message GetQueueUpdatesResponse {
+  oneof queue_update_result {
+    Queue full = 1;
     QueuePositionChange position_change = 2;
   }
 }
 
-message QueueSaveRequest {
+message SaveQueueRequest {
   string name = 1;
   // inside the configured path of crabidy
   string path = 2;
-
 }
-
-service Playback {
-  rpc TogglePlay (EmptyRequest) returns (EmptyResponse);
-  rpc Stop (EmptyRequest) returns (EmptyResponse);
-  rpc GetActiveTrack (EmptyRequest) returns (ActiveTrack);
-  rpc GetTrackUpdates (ActiveTrackFilter) returns (stream ActiveTrack);
-}
-
 
 enum TrackPlayState {
-  TRACK_PLAY_STATE_STOPPED = 0;
-  TRACK_PLAY_STATE_LOADING = 1;
-  TRACK_PLAY_STATE_PLAYING = 2;
-  TRACK_PLAY_STATE_PAUSED = 3;
+  TRACK_PLAY_STATE_UNSPECIFIED = 0;
+  TRACK_PLAY_STATE_STOPPED = 1;
+  TRACK_PLAY_STATE_LOADING = 2;
+  TRACK_PLAY_STATE_PLAYING = 3;
+  TRACK_PLAY_STATE_PAUSED = 4;
 }
 
-message ActiveTrackFilter {
+message GetTrackUpdatesRequest {
   // defines how many of the update messages should be skipped
   // before they are sent back via GetTrackUpdates
   uint32 updates_skipped = 1;
@@ -141,11 +158,17 @@ message ActiveTrackFilter {
   repeated string type_blacklist = 3;
 }
 
-message ActiveTrack {
+message GetActiveTrackResponse {
   optional Track track = 1;
   TrackPlayState play_state = 2;
   uint32 completion = 3;
 }
 
-message EmptyRequest { }
-message EmptyResponse { }
+message GetTrackUpdatesResponse {
+  optional Track track = 1;
+  TrackPlayState play_state = 2;
+  uint32 completion = 3;
+}
+
+message EmptyRequest {}
+message EmptyResponse {}
