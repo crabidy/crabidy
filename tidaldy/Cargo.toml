@@ -1,0 +1,24 @@
+[package]
+name = "tidaldy"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1.68"
+base64 = "0.21.0"
+chrono = "0.4.24"
+confique = "0.2.3"
+crabidy-core = { path = "../crabidy-core" }
+reqwest = { version = "0.11.17", features = ["json", "rustls"] }
+secrecy = { version = "0.8.0", features = ["serde"] }
+serde = { version = "1.0.162", features = ["derive"] }
+serde_json = "1.0.96"
+serde_urlencoded = "0.7.1"
+thiserror = "1.0.40"
+tokio = { version = "1.28.1", features = ["full", "time"] }
+toml = "0.7.4"
+
+[dev-dependencies]
+tokio = { version = "1.28.1", features = ["full"] }

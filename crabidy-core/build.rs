@@ -1,4 +1,5 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::compile_protos("crabidy/v1/crabidy.proto")?;
+    tonic_build::compile_protos("crabidy/proto/crabidy.proto")?;
     Ok(())
 }
