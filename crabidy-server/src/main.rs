@@ -1,14 +1,15 @@
-use anyhow::{Error, Result};
+use anyhow::Error;
 use async_trait::async_trait;
 use crabidy_core::proto::crabidy::{
     crabidy_service_server::{CrabidyService, CrabidyServiceServer},
+    get_queue_updates_response::QueueUpdateResult,
     AppendNodeRequest, AppendNodeResponse, AppendTrackRequest, AppendTrackResponse,
     GetActiveTrackRequest, GetActiveTrackResponse, GetLibraryNodeRequest, GetLibraryNodeResponse,
     GetQueueRequest, GetQueueResponse, GetQueueUpdatesRequest, GetQueueUpdatesResponse,
     GetTrackRequest, GetTrackResponse, GetTrackUpdatesRequest, GetTrackUpdatesResponse,
     LibraryNode, LibraryNodeState, Queue, QueueLibraryNodeRequest, QueueLibraryNodeResponse,
-    QueueTrackRequest, QueueTrackResponse, RemoveTracksRequest, RemoveTracksResponse,
-    ReplaceWithNodeRequest, ReplaceWithNodeResponse, ReplaceWithTrackRequest,
+    QueuePositionChange, QueueTrackRequest, QueueTrackResponse, RemoveTracksRequest,
+    RemoveTracksResponse, ReplaceWithNodeRequest, ReplaceWithNodeResponse, ReplaceWithTrackRequest,
     ReplaceWithTrackResponse, SaveQueueRequest, SaveQueueResponse, SetCurrentTrackRequest,
     SetCurrentTrackResponse, StopRequest, StopResponse, TogglePlayRequest, TogglePlayResponse,
     TrackPlayState,
@@ -17,7 +18,7 @@ use crabidy_core::{ProviderClient, ProviderError};
 use gstreamer_play::{Play, PlayMessage, PlayState, PlayVideoRenderer};
 // use once_cell::sync::OnceCell;
 use std::{collections::HashMap, fs, pin::Pin, sync::RwLock};
-use tonic::{codegen::futures_core::Stream, transport::Server, Request, Response, Status};
+use tonic::{codegen::futures_core::Stream, transport::Server, Request, Response, Result, Status};
 
 // static CHANNEL: OnceCell<flume::Sender<Input>> = OnceCell::new();
 // static ORCHESTRATOR_CHANNEL: OnceCell<flume::Sender<OrchestratorMessage>> = OnceCell::new();
@@ -224,7 +225,20 @@ impl CrabidyService for AppState {
         &self,
         request: tonic::Request<GetQueueUpdatesRequest>,
     ) -> std::result::Result<tonic::Response<Self::GetQueueUpdatesStream>, tonic::Status> {
-        let queue_vec: Vec<Result<GetQueueUpdatesResponse, Status>> = vec![];
+        let queue_vec: Vec<Result<GetQueueUpdatesResponse, Status>> = vec![
+            Ok(GetQueueUpdatesResponse {
+                queue_update_result: Some(QueueUpdateResult::PositionChange(QueuePositionChange {
+                    timestamp: 12345,
+                    new_position: 42,
+                })),
+            }),
+            Ok(GetQueueUpdatesResponse {
+                queue_update_result: Some(QueueUpdateResult::PositionChange(QueuePositionChange {
+                    timestamp: 6666,
+                    new_position: 11,
+                })),
+            }),
+        ];
         let output_stream = futures::stream::iter(queue_vec.into_iter());
         Ok(Response::new(output_stream))
     }

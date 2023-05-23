@@ -1,5 +1,6 @@
 use crabidy_core::proto::crabidy::{
-    crabidy_service_client::CrabidyServiceClient, GetLibraryNodeRequest,
+    crabidy_service_client::CrabidyServiceClient, get_queue_updates_response::QueueUpdateResult,
+    GetLibraryNodeRequest, GetQueueUpdatesRequest, LibraryNode, LibraryNodeState,
 };
 
 use crossterm::{
@@ -22,9 +23,9 @@ use std::{
     time::{Duration, Instant},
     vec,
 };
-use tonic::Request;
-
 use tokio::task;
+use tokio_stream::StreamExt;
+use tonic::Request;
 
 struct StatefulList<T> {
     state: ListState,
@@ -84,45 +85,16 @@ impl<T> StatefulList<T> {
     }
 }
 
-struct ListNode {
-    name: String,
-    children: Option<Vec<ListNode>>,
-}
-
 struct App {
-    library: StatefulList<ListNode>,
-    queue: StatefulList<ListNode>,
+    library: StatefulList<LibraryNode>,
+    queue: StatefulList<LibraryNode>,
 }
 
 impl App {
     fn new() -> App {
         let mut library = StatefulList::default();
-        library.items.push(ListNode {
-            name: "Tidal".to_owned(),
-            children: None,
-        });
-        library.items.push(ListNode {
-            name: "YouTube".to_owned(),
-            children: None,
-        });
         library.focus();
         let mut queue = StatefulList::default();
-        queue.items.push(ListNode {
-            name: "GLaDOS - Still Alive".to_owned(),
-            children: None,
-        });
-        queue.items.push(ListNode {
-            name: "Floppotron - Star Wars Theme".to_owned(),
-            children: None,
-        });
-        queue.items.push(ListNode {
-            name: "Starcop - Starcop".to_owned(),
-            children: None,
-        });
-        queue.items.push(ListNode {
-            name: "Efence - Airglow".to_owned(),
-            children: None,
-        });
         App { library, queue }
     }
 
@@ -140,6 +112,7 @@ impl App {
 enum Message {
     Quit,
     LibraryData(String),
+    QueueData(String),
 }
 
 #[tokio::main]
@@ -153,11 +126,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut client = CrabidyServiceClient::connect("http://[::1]:50051").await?;
 
-    let request = Request::new(GetLibraryNodeRequest {
+    let get_library_node_request = Request::new(GetLibraryNodeRequest {
         uuid: "/".to_string(),
     });
 
-    let response = client.get_library_node(request).await?;
+    let response = client.get_library_node(get_library_node_request).await?;
 
     if let Some(node) = response.into_inner().node {
         node.children.iter().for_each(|c| {
@@ -165,7 +138,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     }
 
+    let get_queue_updates_request = Request::new(GetQueueUpdatesRequest { timestamp: 0 });
+
+    let mut queue_update_stream = client
+        .get_queue_updates(get_queue_updates_request)
+        .await?
+        .into_inner();
+
     loop {
+        while let Some(Ok(resp)) = queue_update_stream.next().await {
+            if let Some(QueueUpdateResult::PositionChange(pos)) = resp.queue_update_result {
+                tx.send(Message::QueueData(pos.timestamp.to_string()));
+            }
+        }
+
         match rx.recv() {
             Ok(Message::Quit) => {
                 break;
@@ -192,11 +178,32 @@ fn run_ui(tx: Sender<Message>, rx: Receiver<Message>) {
 
     loop {
         for message in rx.try_iter() {
-            if let Message::LibraryData(title) = message {
-                app.library.items.push(ListNode {
-                    name: title,
-                    children: None,
-                });
+            match message {
+                Message::LibraryData(title) => {
+                    // FIXME: this is obviously bullshit
+                    app.library.items.push(LibraryNode {
+                        uuid: title.clone(),
+                        name: title.clone(),
+                        children: Vec::new(),
+                        is_queable: false,
+                        parent: None,
+                        state: LibraryNodeState::Done.into(),
+                        tracks: Vec::new(),
+                    });
+                }
+                Message::QueueData(random_no) => {
+                    // FIXME: this is obviously bullshit
+                    app.queue.items.push(LibraryNode {
+                        uuid: random_no.clone(),
+                        name: random_no.clone(),
+                        children: Vec::new(),
+                        is_queable: false,
+                        parent: None,
+                        state: LibraryNodeState::Done.into(),
+                        tracks: Vec::new(),
+                    });
+                }
+                _ => {}
             }
         }
 

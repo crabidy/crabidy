@@ -11,4 +11,5 @@ crabidy-core = { path = "../crabidy-core" }
 flume = "0.10.14"
 ratatui = "0.20.1"
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 tonic = "0.9"

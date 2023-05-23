@@ -133,6 +133,7 @@ dependencies = [
  "flume",
  "ratatui",
  "tokio",
+ "tokio-stream",
  "tonic",
 ]
 
