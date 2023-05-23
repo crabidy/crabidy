@@ -1,34 +1,36 @@
 use anyhow::{Error, Result};
 use async_trait::async_trait;
 use crabidy_core::proto::crabidy::{
-    library_service_server::{LibraryService, LibraryServiceServer},
-    playback_server::{Playback, PlaybackServer},
-    queue_server::{Queue, QueueServer},
-    GetLibraryNodeRequest, GetLibraryNodeResponse, GetTrackRequest, GetTrackResponse, LibraryNode,
-    LibraryNodeState,
+    crabidy_service_server::{CrabidyService, CrabidyServiceServer},
+    AppendNodeRequest, AppendNodeResponse, AppendTrackRequest, AppendTrackResponse,
+    GetActiveTrackRequest, GetActiveTrackResponse, GetLibraryNodeRequest, GetLibraryNodeResponse,
+    GetQueueRequest, GetQueueResponse, GetQueueUpdatesRequest, GetQueueUpdatesResponse,
+    GetTrackRequest, GetTrackResponse, GetTrackUpdatesRequest, GetTrackUpdatesResponse,
+    LibraryNode, LibraryNodeState, Queue, QueueLibraryNodeRequest, QueueLibraryNodeResponse,
+    QueueTrackRequest, QueueTrackResponse, RemoveTracksRequest, RemoveTracksResponse,
+    ReplaceWithNodeRequest, ReplaceWithNodeResponse, ReplaceWithTrackRequest,
+    ReplaceWithTrackResponse, SaveQueueRequest, SaveQueueResponse, SetCurrentTrackRequest,
+    SetCurrentTrackResponse, StopRequest, StopResponse, TogglePlayRequest, TogglePlayResponse,
+    TrackPlayState,
 };
 use crabidy_core::{ProviderClient, ProviderError};
 use gstreamer_play::{Play, PlayMessage, PlayState, PlayVideoRenderer};
-use once_cell::sync::OnceCell;
-use std::{
-    collections::HashMap,
-    fs,
-    sync::{Arc, RwLock},
-};
-use tonic::{transport::Server, Request, Response, Status};
+// use once_cell::sync::OnceCell;
+use std::{collections::HashMap, fs, pin::Pin, sync::RwLock};
+use tonic::{codegen::futures_core::Stream, transport::Server, Request, Response, Status};
 
 // static CHANNEL: OnceCell<flume::Sender<Input>> = OnceCell::new();
-static ORCHESTRATOR_CHANNEL: OnceCell<flume::Sender<OrchestratorMessage>> = OnceCell::new();
+// static ORCHESTRATOR_CHANNEL: OnceCell<flume::Sender<OrchestratorMessage>> = OnceCell::new();
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let orchestrator = ClientOrchestrator::init("").await.unwrap();
-    orchestrator.run();
-    let addr = "[::1]:50051".parse()?;
-    let crabidy_service = Library::new();
+    let tx = orchestrator.run();
+    let crabidy_service = AppState::new(tx);
 
+    let addr = "[::1]:50051".parse()?;
     Server::builder()
-        .add_service(LibraryServiceServer::new(crabidy_service))
+        .add_service(CrabidyServiceServer::new(crabidy_service))
         .serve(addr)
         .await?;
 
@@ -49,11 +51,13 @@ enum OrchestratorMessage {
 #[derive(Debug)]
 struct ClientOrchestrator {
     rx: flume::Receiver<OrchestratorMessage>,
+    tx: flume::Sender<OrchestratorMessage>,
     tidal_client: tidaldy::Client,
 }
 
 impl ClientOrchestrator {
-    fn run(self) {
+    fn run(self) -> flume::Sender<OrchestratorMessage> {
+        let tx = self.tx.clone();
         tokio::spawn(async move {
             while let Ok(msg) = self.rx.recv_async().await {
                 match msg {
@@ -71,6 +75,7 @@ impl ClientOrchestrator {
                 }
             }
         });
+        tx
     }
 }
 
@@ -82,8 +87,11 @@ impl ProviderClient for ClientOrchestrator {
         let new_toml_config = tidal_client.settings();
         fs::write("/tmp/tidaldy.toml", new_toml_config).unwrap();
         let (tx, rx) = flume::unbounded();
-        ORCHESTRATOR_CHANNEL.set(tx).unwrap();
-        Ok(Self { rx, tidal_client })
+        Ok(Self {
+            rx,
+            tx,
+            tidal_client,
+        })
     }
     fn settings(&self) -> String {
         "".to_owned()
@@ -105,22 +113,27 @@ impl ProviderClient for ClientOrchestrator {
 }
 
 #[derive(Debug)]
-struct Library {
+struct AppState {
     known_nodes: RwLock<HashMap<String, LibraryNode>>,
-    clients: Arc<HashMap<String, Box<dyn ProviderClient>>>,
+    orchestrator_tx: flume::Sender<OrchestratorMessage>,
 }
 
-impl Library {
-    fn new() -> Self {
+impl AppState {
+    fn new(orchestrator_tx: flume::Sender<OrchestratorMessage>) -> Self {
         Self {
             known_nodes: RwLock::new(HashMap::new()),
-            clients: Arc::new(HashMap::new()),
+            orchestrator_tx,
         }
     }
 }
 
 #[tonic::async_trait]
-impl LibraryService for Library {
+impl CrabidyService for AppState {
+    type GetQueueUpdatesStream =
+        futures::stream::Iter<std::vec::IntoIter<Result<GetQueueUpdatesResponse, Status>>>;
+    type GetTrackUpdatesStream =
+        futures::stream::Iter<std::vec::IntoIter<Result<GetTrackUpdatesResponse, Status>>>;
+
     async fn get_library_node(
         &self,
         request: Request<GetLibraryNodeRequest>,
@@ -128,8 +141,7 @@ impl LibraryService for Library {
         println!("Got a library node request: {:?}", request);
         let node_uuid = request.into_inner().uuid;
         let (tx, rx) = flume::bounded(1);
-        ORCHESTRATOR_CHANNEL
-            .wait()
+        self.orchestrator_tx
             .send_async(OrchestratorMessage::GetNode {
                 uuid: node_uuid,
                 callback: tx,
@@ -150,6 +162,119 @@ impl LibraryService for Library {
 
         let reply = GetTrackResponse { track: None };
         Ok(Response::new(reply))
+    }
+
+    async fn queue_track(
+        &self,
+        request: tonic::Request<QueueTrackRequest>,
+    ) -> std::result::Result<tonic::Response<QueueTrackResponse>, tonic::Status> {
+        let reply = QueueTrackResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn queue_library_node(
+        &self,
+        request: tonic::Request<QueueLibraryNodeRequest>,
+    ) -> std::result::Result<tonic::Response<QueueLibraryNodeResponse>, tonic::Status> {
+        let reply = QueueLibraryNodeResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn replace_with_track(
+        &self,
+        request: tonic::Request<ReplaceWithTrackRequest>,
+    ) -> std::result::Result<tonic::Response<ReplaceWithTrackResponse>, tonic::Status> {
+        let reply = ReplaceWithTrackResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn replace_with_node(
+        &self,
+        request: tonic::Request<ReplaceWithNodeRequest>,
+    ) -> std::result::Result<tonic::Response<ReplaceWithNodeResponse>, tonic::Status> {
+        let reply = ReplaceWithNodeResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn append_track(
+        &self,
+        request: tonic::Request<AppendTrackRequest>,
+    ) -> std::result::Result<tonic::Response<AppendTrackResponse>, tonic::Status> {
+        let reply = AppendTrackResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn append_node(
+        &self,
+        request: tonic::Request<AppendNodeRequest>,
+    ) -> std::result::Result<tonic::Response<AppendNodeResponse>, tonic::Status> {
+        let reply = AppendNodeResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn remove_tracks(
+        &self,
+        request: tonic::Request<RemoveTracksRequest>,
+    ) -> std::result::Result<tonic::Response<RemoveTracksResponse>, tonic::Status> {
+        let reply = RemoveTracksResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn set_current_track(
+        &self,
+        request: tonic::Request<SetCurrentTrackRequest>,
+    ) -> std::result::Result<tonic::Response<SetCurrentTrackResponse>, tonic::Status> {
+        let reply = SetCurrentTrackResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn get_queue_updates(
+        &self,
+        request: tonic::Request<GetQueueUpdatesRequest>,
+    ) -> std::result::Result<tonic::Response<Self::GetQueueUpdatesStream>, tonic::Status> {
+        let queue_vec: Vec<Result<GetQueueUpdatesResponse, Status>> = vec![];
+        let output_stream = futures::stream::iter(queue_vec.into_iter());
+        Ok(Response::new(output_stream))
+    }
+    async fn get_queue(
+        &self,
+        request: tonic::Request<GetQueueRequest>,
+    ) -> std::result::Result<tonic::Response<GetQueueResponse>, tonic::Status> {
+        let reply = GetQueueResponse { queue: None };
+        Ok(Response::new(reply))
+    }
+    async fn save_queue(
+        &self,
+        request: tonic::Request<SaveQueueRequest>,
+    ) -> std::result::Result<tonic::Response<SaveQueueResponse>, tonic::Status> {
+        let reply = SaveQueueResponse {};
+        Ok(Response::new(reply))
+    }
+    /// Playback
+    async fn toggle_play(
+        &self,
+        request: tonic::Request<TogglePlayRequest>,
+    ) -> std::result::Result<tonic::Response<TogglePlayResponse>, tonic::Status> {
+        let reply = TogglePlayResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn stop(
+        &self,
+        request: tonic::Request<StopRequest>,
+    ) -> std::result::Result<tonic::Response<StopResponse>, tonic::Status> {
+        let reply = StopResponse {};
+        Ok(Response::new(reply))
+    }
+    async fn get_active_track(
+        &self,
+        request: tonic::Request<GetActiveTrackRequest>,
+    ) -> std::result::Result<tonic::Response<GetActiveTrackResponse>, tonic::Status> {
+        let reply = GetActiveTrackResponse {
+            track: None,
+            play_state: TrackPlayState::Stopped as i32,
+            completion: 0,
+        };
+        Ok(Response::new(reply))
+    }
+    async fn get_track_updates(
+        &self,
+        request: tonic::Request<GetTrackUpdatesRequest>,
+    ) -> std::result::Result<tonic::Response<Self::GetTrackUpdatesStream>, tonic::Status> {
+        let track_vec: Vec<Result<GetTrackUpdatesResponse, Status>> = vec![];
+        let output_stream = futures::stream::iter(track_vec.into_iter());
+        Ok(Response::new(output_stream))
     }
 }
 
