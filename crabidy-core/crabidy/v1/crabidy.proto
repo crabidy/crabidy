@@ -7,24 +7,41 @@ service CrabidyService {
   rpc GetTrack(GetTrackRequest) returns (GetTrackResponse);
 
   // Queue
-  rpc QueueTrack(QueueTrackRequest) returns (EmptyResponse);
-  rpc QueueLibraryNode(QueueLibraryNodeRequest) returns (EmptyResponse);
-  rpc ReplaceWithTrack(ReplaceWithTrackRequest) returns (EmptyResponse);
-  rpc ReplaceWithNode(ReplaceWithNodeRequest) returns (EmptyResponse);
-  rpc AppendTrack(AppendTrackRequest) returns (EmptyResponse);
-  rpc AppendNode(AppendNodeRequest) returns (EmptyResponse);
-  rpc RemoveTracks(RemoveTracksRequest) returns (EmptyResponse);
-  rpc SetCurrentTrack(SetCurrentTrackRequest) returns (EmptyResponse);
+  rpc QueueTrack(QueueTrackRequest) returns (QueueTrackResponse);
+  rpc QueueLibraryNode(QueueLibraryNodeRequest) returns (QueueLibraryNodeResponse);
+  rpc ReplaceWithTrack(ReplaceWithTrackRequest) returns (ReplaceWithTrackResponse);
+  rpc ReplaceWithNode(ReplaceWithNodeRequest) returns (ReplaceWithNodeResponse);
+  rpc AppendTrack(AppendTrackRequest) returns (AppendTrackResponse);
+  rpc AppendNode(AppendNodeRequest) returns (AppendNodeResponse);
+  rpc RemoveTracks(RemoveTracksRequest) returns (RemoveTracksResponse);
+  rpc SetCurrentTrack(SetCurrentTrackRequest) returns (SetCurrentTrackResponse);
   rpc GetQueueUpdates(GetQueueUpdatesRequest) returns (stream GetQueueUpdatesResponse);
-  rpc GetQueue(EmptyRequest) returns (GetQueueResponse);
-  rpc SaveQueue(SaveQueueRequest) returns (EmptyResponse);
+  rpc GetQueue(GetQueueRequest) returns (GetQueueResponse);
+  rpc SaveQueue(SaveQueueRequest) returns (SaveQueueResponse);
 
   // Playback
-  rpc TogglePlay(EmptyRequest) returns (EmptyResponse);
-  rpc Stop(EmptyRequest) returns (EmptyResponse);
-  rpc GetActiveTrack(EmptyRequest) returns (GetActiveTrackResponse);
+  rpc TogglePlay(TogglePlayRequest) returns (TogglePlayResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+  rpc GetActiveTrack(GetActiveTrackRequest) returns (GetActiveTrackResponse);
   rpc GetTrackUpdates(GetTrackUpdatesRequest) returns (stream GetTrackUpdatesResponse);
 }
+
+message GetQueueRequest {}
+message QueueTrackResponse {}
+message QueueLibraryNodeResponse {}
+message ReplaceWithTrackResponse {}
+message ReplaceWithNodeResponse {}
+message AppendTrackResponse {}
+message AppendNodeResponse {}
+message RemoveTracksResponse {}
+message SetCurrentTrackResponse {}
+message SaveQueueResponse {}
+
+message TogglePlayRequest {}
+message TogglePlayResponse {}
+message StopRequest {}
+message StopResponse {}
+message GetActiveTrackRequest {}
 
 // To signal whether it's loading data (for frontend only probably -
 // could also be used for fetching from providers?)
@@ -169,6 +186,3 @@ message GetTrackUpdatesResponse {
   TrackPlayState play_state = 2;
   uint32 completion = 3;
 }
-
-message EmptyRequest {}
-message EmptyResponse {}
