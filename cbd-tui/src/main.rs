@@ -1,4 +1,6 @@
-mod graphql;
+use crabidy_core::proto::crabidy::{
+    crabidy_service_client::CrabidyServiceClient, GetLibraryNodeRequest,
+};
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
@@ -20,8 +22,8 @@ use std::{
     time::{Duration, Instant},
     vec,
 };
+use tonic::Request;
 
-use cynic::{http::ReqwestExt, QueryBuilder};
 use tokio::task;
 
 struct StatefulList<T> {
@@ -141,7 +143,7 @@ enum Message {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (ui_tx, rx): (Sender<Message>, Receiver<Message>) = flume::unbounded();
     let (tx, ui_rx): (Sender<Message>, Receiver<Message>) = flume::unbounded();
 
@@ -149,30 +151,18 @@ async fn main() {
         run_ui(ui_tx, ui_rx);
     });
 
-    // FIXME: move into some request function
-    let operation = graphql::queries::AllFilmsQuery::build(());
+    let mut client = CrabidyServiceClient::connect("http://[::1]:50051").await?;
 
-    let client = reqwest::Client::new();
+    let request = Request::new(GetLibraryNodeRequest {
+        uuid: "/".to_string(),
+    });
 
-    let response = client
-        .post("https://swapi-graphql.netlify.app/.netlify/functions/index")
-        .run_graphql(operation)
-        .await
-        .unwrap();
+    let response = client.get_library_node(request).await?;
 
-    if let Some(data) = response.data {
-        if let Some(films) = data.all_films {
-            if let Some(list) = films.films {
-                // FIXME: Collect into array/vector instead and send it all over at once
-                list.iter().for_each(|mut f| {
-                    if let Some(film) = f {
-                        if let Some(title) = &film.title {
-                            tx.send(Message::LibraryData(title.to_string()));
-                        }
-                    }
-                })
-            }
-        }
+    if let Some(node) = response.into_inner().node {
+        node.children.iter().for_each(|c| {
+            tx.send(Message::LibraryData(c.to_string()));
+        })
     }
 
     loop {
@@ -183,6 +173,8 @@ async fn main() {
             _ => {}
         }
     }
+
+    Ok(())
 }
 
 fn run_ui(tx: Sender<Message>, rx: Receiver<Message>) {
