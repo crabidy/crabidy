@@ -30,15 +30,15 @@ impl fmt::Display for RpcClientError {
 
 impl Error for RpcClientError {}
 
-pub struct RpcClient<'a> {
-    library_node_cache: HashMap<&'a str, LibraryNode>,
+pub struct RpcClient {
+    library_node_cache: HashMap<String, LibraryNode>,
     client: CrabidyServiceClient<Channel>,
 }
 
-impl<'a> RpcClient<'a> {
-    pub async fn connect(addr: &'static str) -> Result<RpcClient<'a>, tonic::transport::Error> {
+impl RpcClient {
+    pub async fn connect(addr: &'static str) -> Result<RpcClient, tonic::transport::Error> {
         let client = CrabidyServiceClient::connect(addr).await?;
-        let library_node_cache: HashMap<&str, LibraryNode> = HashMap::new();
+        let library_node_cache: HashMap<String, LibraryNode> = HashMap::new();
         Ok(RpcClient {
             client,
             library_node_cache,
@@ -46,7 +46,7 @@ impl<'a> RpcClient<'a> {
     }
     pub async fn get_library_node(
         &mut self,
-        uuid: &'a str,
+        uuid: &str,
     ) -> Result<Option<&LibraryNode>, Box<dyn Error>> {
         if self.library_node_cache.contains_key(uuid) {
             return Ok(self.library_node_cache.get(uuid));
@@ -62,7 +62,8 @@ impl<'a> RpcClient<'a> {
             .await?;
 
         if let Some(library_node) = response.into_inner().node {
-            self.library_node_cache.insert(uuid, library_node);
+            self.library_node_cache
+                .insert(uuid.to_string(), library_node);
             // FIXME: is that necessary?
             return Ok(self.library_node_cache.get(uuid));
         }

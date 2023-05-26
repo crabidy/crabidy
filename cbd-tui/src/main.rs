@@ -28,7 +28,7 @@ use std::{
     time::{Duration, Instant},
     vec,
 };
-use tokio::{select, task};
+use tokio::{select, signal, task};
 use tokio_stream::StreamExt;
 // use
 use tonic::{transport::Channel, Request, Streaming};
@@ -89,49 +89,110 @@ impl<T> StatefulList<T> {
         }
         self.state.select(None);
     }
+
+    fn get_selected(&self) -> Option<&T> {
+        if let Some(idx) = self.state.selected() {
+            return Some(&self.items[idx]);
+        }
+        None
+    }
+}
+
+struct UiItem {
+    uuid: String,
+    title: String,
+}
+
+struct LibraryView {
+    title: String,
+    uuid: String,
+    list: StatefulList<UiItem>,
+    parent: Option<String>,
+}
+
+impl LibraryView {
+    fn update(&mut self, node: LibraryNode) {
+        if node.tracks.is_empty() && node.children.is_empty() {
+            return;
+        }
+        // if children empty and tracks empty return
+        self.uuid = node.uuid;
+        self.title = node.name;
+        self.parent = node.parent;
+
+        if !node.tracks.is_empty() {
+            self.list.items = node
+                .tracks
+                .iter()
+                .map(|t| UiItem {
+                    uuid: t.uuid.clone(),
+                    title: t.title.clone(),
+                })
+                .collect();
+        } else {
+            // if tracks not empty use tracks instead
+            self.list.items = node
+                .children
+                .iter()
+                .map(|c| UiItem {
+                    uuid: c.to_string(),
+                    title: c.to_string(),
+                })
+                .collect();
+        }
+    }
 }
 
 struct App {
-    library: StatefulList<LibraryNode>,
-    queue: StatefulList<LibraryNode>,
+    library: LibraryView,
+    queue: StatefulList<UiItem>,
 }
 
 impl App {
     fn new() -> App {
-        let mut library = StatefulList::default();
-        library.focus();
+        let mut library = LibraryView {
+            title: "Library".to_string(),
+            uuid: "/".to_string(),
+            list: StatefulList::default(),
+            parent: None,
+        };
+        library.list.focus();
         let mut queue = StatefulList::default();
         App { library, queue }
     }
 
     fn cycle_active(&mut self) {
-        if self.library.is_focused() {
-            self.library.blur();
+        if self.library.list.is_focused() {
+            self.library.list.blur();
             self.queue.focus();
         } else {
-            self.library.focus();
+            self.library.list.focus();
             self.queue.blur();
         }
     }
 }
 
-enum Message<'a> {
-    Quit,
-    // FIXME: Is String OK here?
-    GetLibraryNode(&'a str),
-    LibraryNodeReceived(LibraryNode),
+// FIXME: Rename this
+enum MessageToUi {
+    ReplaceLibraryNode(LibraryNode),
     QueueStreamUpdate(QueueUpdateResult),
     TrackStreamUpdate(GetTrackUpdatesResponse),
 }
 
+// FIXME: Rename this
+enum MessageFromUi {
+    Quit,
+    GetLibraryNode(String),
+}
+
 async fn orchestrate<'a>(
-    (tx, rx): (Sender<Message<'a>>, Receiver<Message<'a>>),
+    (tx, rx): (Sender<MessageToUi>, Receiver<MessageFromUi>),
 ) -> Result<(), Box<dyn Error>> {
     let mut rpc_client = rpc::RpcClient::connect("http://[::1]:50051").await?;
 
     if let Some(root_node) = rpc_client.get_library_node("/").await? {
         // FIXME: Is it ok to clone here?
-        tx.send(Message::LibraryNodeReceived(root_node.clone()));
+        tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
     }
 
     // FIXME: stream failures, do we need to re-establish the stream?
@@ -142,27 +203,23 @@ async fn orchestrate<'a>(
         select! {
             Ok(msg) = &mut rx.recv_async() => {
                 match msg {
-                    // FIXME: How can I make sure I have all match arms implmenented?
-                    // (Some messages are not applicable here)
-                    Message::Quit => {
+                    MessageFromUi::Quit => {
                         break Ok(());
                     },
-                    Message::GetLibraryNode(uuid) => {
-                        if let Some(node) = rpc_client.get_library_node(uuid).await? {
-                            // FIXME: Is it ok to clone here?
-                            tx.send(Message::LibraryNodeReceived(node.clone()));
+                    MessageFromUi::GetLibraryNode(uuid) => {
+                        if let Some(node) = rpc_client.get_library_node(&uuid).await? {
+                            tx.send(MessageToUi::ReplaceLibraryNode(node.clone()));
                         }
                     }
-                    _ => {},
                 }
             }
             Some(Ok(resp)) = queue_update_stream.next() => {
                 if let Some(res) = resp.queue_update_result {
-                    tx.send_async(Message::QueueStreamUpdate(res)).await;
+                    tx.send_async(MessageToUi::QueueStreamUpdate(res)).await;
                 }
             }
             Some(Ok(resp)) = track_update_stream.next() => {
-                tx.send(Message::TrackStreamUpdate(resp));
+                tx.send(MessageToUi::TrackStreamUpdate(resp));
             }
         }
     }
@@ -170,8 +227,8 @@ async fn orchestrate<'a>(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (ui_tx, rx): (Sender<Message>, Receiver<Message>) = flume::unbounded();
-    let (tx, ui_rx): (Sender<Message>, Receiver<Message>) = flume::unbounded();
+    let (ui_tx, rx): (Sender<MessageFromUi>, Receiver<MessageFromUi>) = flume::unbounded();
+    let (tx, ui_rx): (Sender<MessageToUi>, Receiver<MessageToUi>) = flume::unbounded();
 
     thread::spawn(|| {
         run_ui(ui_tx, ui_rx);
@@ -180,19 +237,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // FIXME: unwrap
     tokio::spawn(async move { orchestrate((tx, rx)).await.unwrap() });
 
-    // loop {
-    //     match rx.recv() {
-    //         Ok(Message::Quit) => {
-    //             break;
-    //         }
-    //         _ => {}
-    //     }
-    // }
+    signal::ctrl_c().await.unwrap();
 
     Ok(())
 }
 
-fn run_ui(tx: Sender<Message>, rx: Receiver<Message>) {
+fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
     // setup terminal
     enable_raw_mode().unwrap();
     let mut stdout = io::stdout();
@@ -208,32 +258,15 @@ fn run_ui(tx: Sender<Message>, rx: Receiver<Message>) {
     loop {
         for message in rx.try_iter() {
             match message {
-                Message::LibraryNodeReceived(node) => {
-                    // FIXME: this is obviously bullshit
-                    // FIXME: DO NOT PUSH LIBRARY_NODES ONTO THE UI, IT SHOULD GET ITS OWN TYPE
-                    app.library.items.push(LibraryNode {
-                        uuid: node.uuid,
-                        name: node.name,
-                        children: Vec::new(),
-                        is_queable: false,
-                        parent: None,
-                        state: LibraryNodeState::Done.into(),
-                        tracks: Vec::new(),
-                    });
+                MessageToUi::ReplaceLibraryNode(node) => {
+                    app.library.update(node);
                 }
-                Message::QueueStreamUpdate(queue_update) => match queue_update {
+                MessageToUi::QueueStreamUpdate(queue_update) => match queue_update {
                     QueueUpdateResult::Full(queue) => {}
                     QueueUpdateResult::PositionChange(pos) => {
-                        // FIXME: this is obviously bullshit
-                        // FIXME: DO NOT PUSH LIBRARY_NODES ONTO THE UI, IT SHOULD GET ITS OWN TYPE
-                        app.queue.items.push(LibraryNode {
+                        app.queue.items.push(UiItem {
                             uuid: pos.timestamp.to_string(),
-                            name: pos.timestamp.to_string(),
-                            children: Vec::new(),
-                            is_queable: false,
-                            parent: None,
-                            state: LibraryNodeState::Done.into(),
-                            tracks: Vec::new(),
+                            title: pos.timestamp.to_string(),
                         });
                     }
                 },
@@ -252,24 +285,34 @@ fn run_ui(tx: Sender<Message>, rx: Receiver<Message>) {
                 if key.kind == KeyEventKind::Press {
                     match key.code {
                         KeyCode::Char('q') => {
-                            tx.send(Message::Quit);
+                            tx.send(MessageFromUi::Quit);
                             break;
                         }
                         KeyCode::Char('j') => {
-                            if app.library.is_focused() {
-                                app.library.next();
+                            if app.library.list.is_focused() {
+                                app.library.list.next();
                             } else {
                                 app.queue.next();
                             }
                         }
                         KeyCode::Char('k') => {
-                            if app.library.is_focused() {
-                                app.library.prev();
+                            if app.library.list.is_focused() {
+                                app.library.list.prev();
                             } else {
                                 app.queue.prev();
                             }
                         }
                         KeyCode::Tab => app.cycle_active(),
+                        KeyCode::Char('h') => {
+                            if let Some(parent) = app.library.parent.as_ref() {
+                                tx.send(MessageFromUi::GetLibraryNode(parent.clone()));
+                            }
+                        }
+                        KeyCode::Char('l') => {
+                            if let Some(item) = app.library.list.get_selected() {
+                                tx.send(MessageFromUi::GetLibraryNode(item.uuid.clone()));
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -302,21 +345,22 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     let library_items: Vec<ListItem> = app
         .library
+        .list
         .items
         .iter()
         // FIXME: why to_string() ??
-        .map(|i| ListItem::new(Span::from(i.name.to_string())))
+        .map(|i| ListItem::new(Span::from(i.title.to_string())))
         .collect();
 
     let library_list = List::new(library_items)
-        .block(Block::default().borders(Borders::ALL).title("Library"))
+        .block(Block::default().borders(Borders::ALL).title(app.library.title.clone()))
         .highlight_style(
             Style::default()
                 .bg(Color::LightBlue)
                 .add_modifier(Modifier::BOLD),
         );
 
-    f.render_stateful_widget(library_list, main[0], &mut app.library.state);
+    f.render_stateful_widget(library_list, main[0], &mut app.library.list.state);
 
     let now_playing = Layout::default()
         .direction(Direction::Vertical)
@@ -328,7 +372,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .items
         .iter()
         // FIXME: why to_string() ??
-        .map(|i| ListItem::new(Span::from(i.name.to_string())))
+        .map(|i| ListItem::new(Span::from(i.title.to_string())))
         .collect();
 
     let queue_list = List::new(queue_items)
