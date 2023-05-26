@@ -53,7 +53,17 @@ impl crabidy_core::ProviderClient for Client {
         Ok(manifest.urls)
     }
 
-    fn get_library_root(&self) -> crabidy_core::proto::crabidy::LibraryNode {
+    async fn get_metadata_for_track(
+        &self,
+        track_uuid: &str,
+    ) -> Result<crabidy_core::proto::crabidy::Track, crabidy_core::ProviderError> {
+        let Ok(track) = self.get_track(track_uuid).await else {
+                  return Err(crabidy_core::ProviderError::FetchError)
+                };
+        Ok(track.into())
+    }
+
+    fn get_lib_root(&self) -> crabidy_core::proto::crabidy::LibraryNode {
         let global_root = crabidy_core::proto::crabidy::LibraryNode::new();
         let children = vec!["userplaylists".to_string()];
         crabidy_core::proto::crabidy::LibraryNode {
@@ -67,7 +77,7 @@ impl crabidy_core::ProviderClient for Client {
         }
     }
 
-    async fn get_library_node(
+    async fn get_lib_node(
         &self,
         uuid: &str,
     ) -> Result<crabidy_core::proto::crabidy::LibraryNode, crabidy_core::ProviderError> {
@@ -353,7 +363,7 @@ impl Client {
         .await
     }
 
-    pub async fn get_track(&self, track_id: String) -> Result<Track, ClientError> {
+    pub async fn get_track(&self, track_id: &str) -> Result<Track, ClientError> {
         self.make_request(&format!("tracks/{}", track_id), None)
             .await
     }

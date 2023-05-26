@@ -175,14 +175,16 @@ message GetTrackUpdatesRequest {
   repeated string type_blacklist = 3;
 }
 
-message GetActiveTrackResponse {
+message ActiveTrack {
   optional Track track = 1;
   TrackPlayState play_state = 2;
   uint32 completion = 3;
 }
 
+message GetActiveTrackResponse {
+  ActiveTrack active_track = 1;
+}
+
 message GetTrackUpdatesResponse {
-  optional Track track = 1;
-  TrackPlayState play_state = 2;
-  uint32 completion = 3;
+  ActiveTrack active_track = 1;
 }

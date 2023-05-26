@@ -1,7 +1,7 @@
 pub mod proto;
 
 use async_trait::async_trait;
-use proto::crabidy::{LibraryNode, LibraryNodeState};
+use proto::crabidy::{LibraryNode, LibraryNodeState, Queue, Track};
 
 #[async_trait]
 pub trait ProviderClient: std::fmt::Debug + Send + Sync {
@@ -10,8 +10,9 @@ pub trait ProviderClient: std::fmt::Debug + Send + Sync {
         Self: Sized;
     fn settings(&self) -> String;
     async fn get_urls_for_track(&self, track_uuid: &str) -> Result<Vec<String>, ProviderError>;
-    fn get_library_root(&self) -> LibraryNode;
-    async fn get_library_node(&self, list_uuid: &str) -> Result<LibraryNode, ProviderError>;
+    async fn get_metadata_for_track(&self, track_uuid: &str) -> Result<Track, ProviderError>;
+    fn get_lib_root(&self) -> LibraryNode;
+    async fn get_lib_node(&self, list_uuid: &str) -> Result<LibraryNode, ProviderError>;
 }
 
 #[derive(Clone, Debug, Hash)]
@@ -20,7 +21,14 @@ pub enum ProviderError {
     CouldNotLogin,
     FetchError,
     MalformedUuid,
+    InternalError,
     Other,
+}
+
+impl std::fmt::Display for ProviderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl LibraryNode {
@@ -33,6 +41,63 @@ impl LibraryNode {
             state: LibraryNodeState::Unspecified as i32,
             tracks: Vec::new(),
             is_queable: false,
+        }
+    }
+}
+
+pub enum QueueError {
+    NotQueable,
+}
+
+impl Queue {
+    pub fn current(&mut self) -> Option<Track> {
+        if self.current < self.tracks.len() as u32 {
+            Some(self.tracks[self.current as usize].clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn next(&mut self) -> Option<Track> {
+        if self.current < self.tracks.len() as u32 {
+            self.current += 1;
+            Some(self.tracks[self.current as usize].clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn set_current(&mut self, current: u32) -> bool {
+        if current < self.tracks.len() as u32 {
+            self.current = current;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn replace_with_tracks(&mut self, tracks: &[Track]) {
+        self.current = 0;
+        self.tracks = tracks.to_vec();
+    }
+
+    pub fn append_tracks(&mut self, tracks: &[Track]) {
+        self.tracks.extend(tracks.iter().cloned());
+    }
+
+    pub fn queue_tracks(&mut self, tracks: &[Track]) {
+        let tail: Vec<Track> = self
+            .tracks
+            .splice((self.current as usize).., tracks.to_vec())
+            .collect();
+        self.tracks.extend(tail);
+    }
+
+    pub fn remove_tracks(&mut self, positions: &[u32]) {
+        for pos in positions {
+            if *pos < self.tracks.len() as u32 {
+                self.tracks.remove(*pos as usize);
+            }
         }
     }
 }
