@@ -289,6 +289,8 @@ impl Playback {
                             {
                                 let mut queue = self.queue.lock().unwrap();
                                 queue.replace_with_tracks(&[track.clone()]);
+                                let queue_update_tx = self.queue_update_tx.clone();
+                                queue_update_tx.send(queue.clone()).unwrap();
                             }
                             self.play(track).await;
                         }
@@ -302,7 +304,7 @@ impl Playback {
                             let queue_update_tx = self.queue_update_tx.clone();
                             queue_update_tx.send(queue.clone()).unwrap();
                         }
-                        if tracks.len() > 0 {
+                        if !tracks.is_empty() {
                             self.play(tracks[0].clone()).await;
                         }
                     }
@@ -758,6 +760,11 @@ impl CrabidyService for RpcService {
         &self,
         request: tonic::Request<TogglePlayRequest>,
     ) -> std::result::Result<tonic::Response<TogglePlayResponse>, tonic::Status> {
+        let playback_tx = self.playback_tx.clone();
+        playback_tx
+            .send_async(PlaybackMessage::PlayPause)
+            .await
+            .unwrap();
         let reply = TogglePlayResponse {};
         Ok(Response::new(reply))
     }
