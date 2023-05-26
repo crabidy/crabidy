@@ -26,6 +26,11 @@ service CrabidyService {
   rpc GetTrackUpdates(GetTrackUpdatesRequest) returns (stream GetTrackUpdatesResponse);
 }
 
+message LibraryNodeChild {
+  string uuid = 1;
+  string title = 2;
+}
+
 message GetQueueRequest {}
 message QueueTrackResponse {}
 message QueueLibraryNodeResponse {}
@@ -71,8 +76,8 @@ message Track {
 message LibraryNode {
   // Including provider
   string uuid = 1;
-  string name = 2;
-  repeated string children = 3;
+  string title = 2;
+  repeated LibraryNodeChild children = 3;
   optional string parent = 4;
   LibraryNodeState state = 5;
   repeated Track tracks = 6;

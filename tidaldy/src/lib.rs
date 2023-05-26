@@ -65,10 +65,13 @@ impl crabidy_core::ProviderClient for Client {
 
     fn get_lib_root(&self) -> crabidy_core::proto::crabidy::LibraryNode {
         let global_root = crabidy_core::proto::crabidy::LibraryNode::new();
-        let children = vec!["userplaylists".to_string()];
+        let children = vec![crabidy_core::proto::crabidy::LibraryNodeChild::new(
+            "userplaylists".to_string(),
+            "playlists".to_string(),
+        )];
         crabidy_core::proto::crabidy::LibraryNode {
             uuid: "tidal".to_string(),
-            name: "tidal".to_string(),
+            title: "tidal".to_string(),
             parent: Some(format!("{}", global_root.uuid)),
             state: crabidy_core::proto::crabidy::LibraryNodeState::Done as i32,
             tracks: Vec::new(),
@@ -87,10 +90,9 @@ impl crabidy_core::ProviderClient for Client {
         let (module, uuid) = split_uuid(uuid);
         let node = match module.as_str() {
             "userplaylists" => {
-                let global_root = crabidy_core::proto::crabidy::LibraryNode::new();
                 let mut node = crabidy_core::proto::crabidy::LibraryNode {
                     uuid: "userplaylists".to_string(),
-                    name: "playlists".to_string(),
+                    title: "playlists".to_string(),
                     parent: Some("tidal".to_string()),
                     state: crabidy_core::proto::crabidy::LibraryNodeState::Unspecified as i32,
                     tracks: Vec::new(),
@@ -101,8 +103,11 @@ impl crabidy_core::ProviderClient for Client {
                     .get_users_playlists_and_favorite_playlists(&user_id)
                     .await?
                 {
-                    node.children
-                        .push(format!("playlist:{}", playlist.playlist.uuid));
+                    let child = crabidy_core::proto::crabidy::LibraryNodeChild::new(
+                        format!("playlist:{}", playlist.playlist.uuid),
+                        playlist.playlist.title,
+                    );
+                    node.children.push(child);
                 }
                 node
             }

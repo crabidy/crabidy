@@ -6,9 +6,9 @@ use crabidy_core::proto::crabidy::{
     GetActiveTrackRequest, GetActiveTrackResponse, GetLibraryNodeRequest, GetLibraryNodeResponse,
     GetQueueRequest, GetQueueResponse, GetQueueUpdatesRequest, GetQueueUpdatesResponse,
     GetTrackRequest, GetTrackResponse, GetTrackUpdatesRequest, GetTrackUpdatesResponse,
-    LibraryNode, Queue, QueueLibraryNodeRequest, QueueLibraryNodeResponse, QueuePositionChange,
-    QueueTrackRequest, QueueTrackResponse, RemoveTracksRequest, RemoveTracksResponse,
-    ReplaceWithNodeRequest, ReplaceWithNodeResponse, ReplaceWithTrackRequest,
+    LibraryNode, LibraryNodeChild, Queue, QueueLibraryNodeRequest, QueueLibraryNodeResponse,
+    QueuePositionChange, QueueTrackRequest, QueueTrackResponse, RemoveTracksRequest,
+    RemoveTracksResponse, ReplaceWithNodeRequest, ReplaceWithNodeResponse, ReplaceWithTrackRequest,
     ReplaceWithTrackResponse, SaveQueueRequest, SaveQueueResponse, SetCurrentTrackRequest,
     SetCurrentTrackResponse, StopRequest, StopResponse, TogglePlayRequest, TogglePlayResponse,
     Track,
@@ -148,7 +148,7 @@ impl ProviderOrchestrator {
                     continue
                 };
             tracks.extend(node.tracks);
-            nodes_to_go.extend(node.children);
+            nodes_to_go.extend(node.children.into_iter().map(|c| c.uuid))
         }
         tracks
     }
@@ -191,7 +191,8 @@ impl ProviderClient for ProviderOrchestrator {
     }
     fn get_lib_root(&self) -> LibraryNode {
         let mut root_node = LibraryNode::new();
-        root_node.children.push("tidal".to_owned());
+        let child = LibraryNodeChild::new("tidal".to_owned(), "tidal".to_owned());
+        root_node.children.push(child);
         root_node
     }
     async fn get_lib_node(&self, uuid: &str) -> Result<LibraryNode, ProviderError> {

@@ -1,7 +1,7 @@
 pub mod proto;
 
 use async_trait::async_trait;
-use proto::crabidy::{LibraryNode, LibraryNodeState, Queue, Track};
+use proto::crabidy::{LibraryNode, LibraryNodeChild, LibraryNodeState, Queue, Track};
 
 #[async_trait]
 pub trait ProviderClient: std::fmt::Debug + Send + Sync {
@@ -35,13 +35,19 @@ impl LibraryNode {
     pub fn new() -> Self {
         Self {
             uuid: "/".to_string(),
-            name: "/".to_string(),
+            title: "/".to_string(),
             children: Vec::new(),
             parent: None,
             state: LibraryNodeState::Unspecified as i32,
             tracks: Vec::new(),
             is_queable: false,
         }
+    }
+}
+
+impl LibraryNodeChild {
+    pub fn new(uuid: String, title: String) -> Self {
+        Self { uuid, title }
     }
 }
 

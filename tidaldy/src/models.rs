@@ -305,7 +305,7 @@ pub struct Playlist {
 impl From<Playlist> for crabidy_core::proto::crabidy::LibraryNode {
     fn from(a: Playlist) -> Self {
         crabidy_core::proto::crabidy::LibraryNode {
-            name: a.title,
+            title: a.title,
             uuid: format!("playlist:{}", a.uuid),
             tracks: Vec::new(),
             parent: None,
