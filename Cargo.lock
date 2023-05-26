@@ -241,6 +241,7 @@ dependencies = [
  "serde_json",
  "tidaldy",
  "tokio",
+ "tokio-stream",
  "tonic",
 ]
 

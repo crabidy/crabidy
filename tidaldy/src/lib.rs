@@ -380,7 +380,6 @@ impl Client {
         while now.elapsed().as_secs() <= code_response.expires_in {
             let login = self.check_auth_status(&code_response.device_code).await;
             if login.is_err() {
-                // println!("login failed with {:?}", login);
                 sleep(Duration::from_secs(code_response.interval)).await;
                 continue;
             }
@@ -510,7 +509,6 @@ impl Client {
             .header("Content-Type", "application/x-www-form-urlencoded")
             .send()
             .await?;
-        // println!("{:#?} -> {}", res.status(), res.status().is_success());
         if !res.status().is_success() {
             if res.status().is_client_error() {
                 return Err(ClientError::AuthError(format!(
