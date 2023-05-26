@@ -2,8 +2,8 @@ mod rpc;
 
 use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient, get_queue_updates_response::QueueUpdateResult,
-    GetLibraryNodeRequest, GetQueueUpdatesRequest, GetQueueUpdatesResponse,
-    GetTrackUpdatesResponse, LibraryNode, LibraryNodeState,
+    ActiveTrack, GetLibraryNodeRequest, GetQueueUpdatesRequest, GetQueueUpdatesResponse,
+    GetTrackUpdatesResponse, LibraryNode, LibraryNodeState, Queue,
 };
 
 use crossterm::{
@@ -30,71 +30,44 @@ use std::{
 };
 use tokio::{select, signal, task};
 use tokio_stream::StreamExt;
-// use
 use tonic::{transport::Channel, Request, Streaming};
 
-struct StatefulList<T> {
-    state: ListState,
-    items: Vec<T>,
-    prev_selected: usize,
-}
-
-impl<T> StatefulList<T> {
-    fn default() -> Self {
-        let mut state = ListState::default();
-        Self {
-            state,
-            items: Vec::default(),
-            prev_selected: 0,
-        }
-    }
+trait ListView {
+    fn get_size(&self) -> usize;
+    fn select(&mut self, idx: Option<usize>);
+    fn selected(&self) -> Option<usize>;
+    fn prev_selected(&self) -> usize;
 
     fn next(&mut self) {
-        if let Some(i) = self.state.selected() {
-            let next = if i == self.items.len() - 1 { 0 } else { i + 1 };
-            self.state.select(Some(next));
+        if self.is_empty() {
+            return;
+        }
+        if let Some(i) = self.selected() {
+            let next = if i == self.get_size() - 1 { 0 } else { i + 1 };
+            self.select(Some(next));
         } else {
-            self.state.select(Some(0));
+            self.select(Some(0));
         }
     }
 
     fn prev(&mut self) {
-        if let Some(i) = self.state.selected() {
-            let prev = if i == 0 { self.items.len() - 1 } else { i - 1 };
-            self.state.select(Some(prev));
-        } else {
-            self.state.select(Some(0));
-        }
-    }
-
-    fn is_focused(&self) -> bool {
-        self.state.selected().is_some()
-    }
-
-    fn focus(&mut self) {
-        if self.is_focused() {
+        if self.is_empty() {
             return;
         }
-        self.state.select(Some(self.prev_selected));
-    }
-
-    fn blur(&mut self) {
-        if !self.is_focused() {
-            return;
-        }
-        if let Some(i) = self.state.selected() {
-            self.prev_selected = i;
+        if let Some(i) = self.selected() {
+            let prev = if i == 0 { self.get_size() - 1 } else { i - 1 };
+            self.select(Some(prev));
         } else {
-            self.prev_selected = 0;
+            self.select(Some(0));
         }
-        self.state.select(None);
     }
 
-    fn get_selected(&self) -> Option<&T> {
-        if let Some(idx) = self.state.selected() {
-            return Some(&self.items[idx]);
-        }
-        None
+    fn is_selected(&self) -> bool {
+        self.selected().is_some()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.get_size() == 0
     }
 }
 
@@ -103,25 +76,134 @@ struct UiItem {
     title: String,
 }
 
+struct QueueView {
+    list: Vec<UiItem>,
+    list_state: ListState,
+    prev_selected: usize,
+}
+
+impl ListView for QueueView {
+    fn get_size(&self) -> usize {
+        self.list.len()
+    }
+
+    fn select(&mut self, idx: Option<usize>) {
+        if let Some(pos) = idx {
+            self.prev_selected = pos;
+        }
+        self.list_state.select(idx);
+    }
+
+    fn selected(&self) -> Option<usize> {
+        self.list_state.selected()
+    }
+
+    fn prev_selected(&self) -> usize {
+        self.prev_selected
+    }
+}
+
+#[derive(Clone, Copy)]
+enum UiFocus {
+    Library,
+    Queue,
+}
+
+impl QueueView {
+    fn check_focus(&mut self, focus: UiFocus) {
+        if !self.is_selected() && matches!(focus, UiFocus::Queue) {
+            self.select(Some(self.prev_selected()));
+        } else if self.is_selected() && !matches!(focus, UiFocus::Queue) {
+            self.select(None);
+        }
+    }
+    fn update(&mut self, queue: Queue) {
+        self.list = queue
+            .tracks
+            .iter()
+            .map(|t| UiItem {
+                uuid: t.uuid.clone(),
+                title: t.title.clone(),
+            })
+            .collect();
+    }
+}
+
 struct LibraryView {
     title: String,
     uuid: String,
-    list: StatefulList<UiItem>,
+    list: Vec<UiItem>,
+    list_state: ListState,
     parent: Option<String>,
+    positions: HashMap<String, usize>,
+}
+
+impl ListView for LibraryView {
+    fn get_size(&self) -> usize {
+        self.list.len()
+    }
+
+    fn select(&mut self, idx: Option<usize>) {
+        if let Some(pos) = idx {
+            self.positions
+                .entry(self.uuid.clone())
+                .and_modify(|e| *e = pos)
+                .or_insert(pos);
+        }
+        self.list_state.select(idx);
+    }
+
+    fn selected(&self) -> Option<usize> {
+        self.list_state.selected()
+    }
+
+    fn prev_selected(&self) -> usize {
+        *self.positions.get(&self.uuid).unwrap_or(&0)
+    }
 }
 
 impl LibraryView {
+    fn check_focus(&mut self, focus: UiFocus) {
+        if !self.is_selected() && matches!(focus, UiFocus::Library) {
+            self.select(Some(self.prev_selected()));
+        } else if self.is_selected() && !matches!(focus, UiFocus::Library) {
+            self.select(None);
+        }
+    }
+    fn get_selected(&self) -> Option<&UiItem> {
+        if let Some(idx) = self.list_state.selected() {
+            return Some(&self.list[idx]);
+        }
+        None
+    }
+    fn ascend(&mut self, tx: &Sender<MessageFromUi>) {
+        if let Some(parent) = self.parent.as_ref() {
+            tx.send(MessageFromUi::GetLibraryNode(parent.clone()));
+        }
+    }
+    fn dive(&mut self, tx: &Sender<MessageFromUi>) {
+        if let Some(item) = self.get_selected() {
+            tx.send(MessageFromUi::GetLibraryNode(item.uuid.clone()));
+        }
+    }
+    fn queue_replace_with_selected(&mut self, tx: &Sender<MessageFromUi>) {
+        if let Some(item) = self.get_selected() {
+            tx.send(MessageFromUi::ReplaceWithNode(item.uuid.clone()));
+        }
+    }
     fn update(&mut self, node: LibraryNode) {
         if node.tracks.is_empty() && node.children.is_empty() {
             return;
         }
+
         // if children empty and tracks empty return
         self.uuid = node.uuid;
-        self.title = node.name;
+        self.title = node.title;
         self.parent = node.parent;
+        self.select(Some(self.prev_selected()));
 
         if !node.tracks.is_empty() {
-            self.list.items = node
+            self.list = node
                 .tracks
                 .iter()
                 .map(|t| UiItem {
@@ -131,21 +213,35 @@ impl LibraryView {
                 .collect();
         } else {
             // if tracks not empty use tracks instead
-            self.list.items = node
+            self.list = node
                 .children
                 .iter()
                 .map(|c| UiItem {
-                    uuid: c.to_string(),
-                    title: c.to_string(),
+                    uuid: c.uuid.clone(),
+                    title: c.title.clone(),
                 })
                 .collect();
         }
     }
 }
 
+struct NowPlayingView {
+    text: String,
+}
+
+impl NowPlayingView {
+    fn update(&mut self, active_track: ActiveTrack) {
+        if let Some(track_info) = active_track.track {
+            self.text = format!("Playing {} - {}", track_info.title, active_track.play_state);
+        }
+    }
+}
+
 struct App {
+    focus: UiFocus,
     library: LibraryView,
-    queue: StatefulList<UiItem>,
+    now_playing: NowPlayingView,
+    queue: QueueView,
 }
 
 impl App {
@@ -153,22 +249,38 @@ impl App {
         let mut library = LibraryView {
             title: "Library".to_string(),
             uuid: "/".to_string(),
-            list: StatefulList::default(),
+            list: Vec::new(),
+            list_state: ListState::default(),
+            positions: HashMap::new(),
             parent: None,
         };
-        library.list.focus();
-        let mut queue = StatefulList::default();
-        App { library, queue }
+        let queue = QueueView {
+            list: Vec::new(),
+            list_state: ListState::default(),
+            prev_selected: 0,
+        };
+        let now_playing = NowPlayingView {
+            text: "Not playing".to_string(),
+        };
+        App {
+            focus: UiFocus::Library,
+            library,
+            now_playing,
+            queue,
+        }
+    }
+
+    fn check_focus(&mut self) {
+        self.library.check_focus(self.focus);
+        self.queue.check_focus(self.focus);
     }
 
     fn cycle_active(&mut self) {
-        if self.library.list.is_focused() {
-            self.library.list.blur();
-            self.queue.focus();
-        } else {
-            self.library.list.focus();
-            self.queue.blur();
-        }
+        self.focus = match (self.focus, self.queue.is_empty()) {
+            (UiFocus::Library, false) => UiFocus::Queue,
+            (UiFocus::Library, true) => UiFocus::Library,
+            (UiFocus::Queue, _) => UiFocus::Library,
+        };
     }
 }
 
@@ -176,13 +288,15 @@ impl App {
 enum MessageToUi {
     ReplaceLibraryNode(LibraryNode),
     QueueStreamUpdate(QueueUpdateResult),
-    TrackStreamUpdate(GetTrackUpdatesResponse),
+    TrackStreamUpdate(ActiveTrack),
 }
 
 // FIXME: Rename this
 enum MessageFromUi {
     Quit,
     GetLibraryNode(String),
+    ReplaceWithNode(String),
+    TogglePlay,
 }
 
 async fn orchestrate<'a>(
@@ -191,7 +305,6 @@ async fn orchestrate<'a>(
     let mut rpc_client = rpc::RpcClient::connect("http://[::1]:50051").await?;
 
     if let Some(root_node) = rpc_client.get_library_node("/").await? {
-        // FIXME: Is it ok to clone here?
         tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
     }
 
@@ -210,6 +323,12 @@ async fn orchestrate<'a>(
                         if let Some(node) = rpc_client.get_library_node(&uuid).await? {
                             tx.send(MessageToUi::ReplaceLibraryNode(node.clone()));
                         }
+                    },
+                    MessageFromUi::ReplaceWithNode(uuid) => {
+                        rpc_client.replace_queue_with(&uuid).await?
+                    }
+                    MessageFromUi::TogglePlay => {
+                        rpc_client.toggle_play().await?
                     }
                 }
             }
@@ -219,7 +338,10 @@ async fn orchestrate<'a>(
                 }
             }
             Some(Ok(resp)) = track_update_stream.next() => {
-                tx.send(MessageToUi::TrackStreamUpdate(resp));
+                if let Some(active_track) = resp.active_track {
+                    tx.send_async(MessageToUi::TrackStreamUpdate(active_track)).await;
+                }
+
             }
         }
     }
@@ -262,15 +384,14 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                     app.library.update(node);
                 }
                 MessageToUi::QueueStreamUpdate(queue_update) => match queue_update {
-                    QueueUpdateResult::Full(queue) => {}
-                    QueueUpdateResult::PositionChange(pos) => {
-                        app.queue.items.push(UiItem {
-                            uuid: pos.timestamp.to_string(),
-                            title: pos.timestamp.to_string(),
-                        });
+                    QueueUpdateResult::Full(queue) => {
+                        app.queue.update(queue);
                     }
+                    QueueUpdateResult::PositionChange(pos) => {}
                 },
-                _ => {}
+                MessageToUi::TrackStreamUpdate(active_track) => {
+                    app.now_playing.update(active_track);
+                }
             }
         }
 
@@ -283,35 +404,35 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
         if crossterm::event::poll(timeout).unwrap() {
             if let Event::Key(key) = event::read().unwrap() {
                 if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') => {
+                    match (app.focus, key.code) {
+                        (_, KeyCode::Char('q')) => {
                             tx.send(MessageFromUi::Quit);
                             break;
                         }
-                        KeyCode::Char('j') => {
-                            if app.library.list.is_focused() {
-                                app.library.list.next();
-                            } else {
-                                app.queue.next();
-                            }
+                        (_, KeyCode::Tab) => app.cycle_active(),
+                        (_, KeyCode::Char(' ')) => {
+                            tx.send(MessageFromUi::TogglePlay);
                         }
-                        KeyCode::Char('k') => {
-                            if app.library.list.is_focused() {
-                                app.library.list.prev();
-                            } else {
-                                app.queue.prev();
-                            }
+                        (UiFocus::Library, KeyCode::Char('j')) => {
+                            app.library.next();
                         }
-                        KeyCode::Tab => app.cycle_active(),
-                        KeyCode::Char('h') => {
-                            if let Some(parent) = app.library.parent.as_ref() {
-                                tx.send(MessageFromUi::GetLibraryNode(parent.clone()));
-                            }
+                        (UiFocus::Library, KeyCode::Char('k')) => {
+                            app.library.prev();
                         }
-                        KeyCode::Char('l') => {
-                            if let Some(item) = app.library.list.get_selected() {
-                                tx.send(MessageFromUi::GetLibraryNode(item.uuid.clone()));
-                            }
+                        (UiFocus::Library, KeyCode::Char('h')) => {
+                            app.library.ascend(&tx);
+                        }
+                        (UiFocus::Library, KeyCode::Char('l')) => {
+                            app.library.dive(&tx);
+                        }
+                        (UiFocus::Library, KeyCode::Enter) => {
+                            app.library.queue_replace_with_selected(&tx);
+                        }
+                        (UiFocus::Queue, KeyCode::Char('j')) => {
+                            app.queue.next();
+                        }
+                        (UiFocus::Queue, KeyCode::Char('k')) => {
+                            app.queue.prev();
                         }
                         _ => {}
                     }
@@ -320,6 +441,7 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
         }
 
         if last_tick.elapsed() >= tick_rate {
+            app.check_focus();
             last_tick = Instant::now();
         }
     }
@@ -346,21 +468,24 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let library_items: Vec<ListItem> = app
         .library
         .list
-        .items
         .iter()
         // FIXME: why to_string() ??
         .map(|i| ListItem::new(Span::from(i.title.to_string())))
         .collect();
 
     let library_list = List::new(library_items)
-        .block(Block::default().borders(Borders::ALL).title(app.library.title.clone()))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(app.library.title.clone()),
+        )
         .highlight_style(
             Style::default()
                 .bg(Color::LightBlue)
                 .add_modifier(Modifier::BOLD),
         );
 
-    f.render_stateful_widget(library_list, main[0], &mut app.library.list.state);
+    f.render_stateful_widget(library_list, main[0], &mut app.library.list_state);
 
     let now_playing = Layout::default()
         .direction(Direction::Vertical)
@@ -369,7 +494,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     let queue_items: Vec<ListItem> = app
         .queue
-        .items
+        .list
         .iter()
         // FIXME: why to_string() ??
         .map(|i| ListItem::new(Span::from(i.title.to_string())))
@@ -383,11 +508,16 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    f.render_stateful_widget(queue_list, now_playing[0], &mut app.queue.state);
+    f.render_stateful_widget(queue_list, now_playing[0], &mut app.queue.list_state);
 
     let media_info = Block::default()
         .title("Now playing")
         .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Black));
-    f.render_widget(media_info, now_playing[1]);
+        .style(Style::default());
+
+    let now_playing_text = Paragraph::new(app.now_playing.text.to_string())
+        .block(media_info)
+        .alignment(Alignment::Center);
+    // f.render_widget(media_info, now_playing[1]);
+    f.render_widget(now_playing_text, now_playing[1]);
 }

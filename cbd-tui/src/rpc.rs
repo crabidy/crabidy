@@ -1,7 +1,8 @@
 use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient, get_queue_updates_response::QueueUpdateResult,
     GetLibraryNodeRequest, GetQueueUpdatesRequest, GetQueueUpdatesResponse, GetTrackUpdatesRequest,
-    GetTrackUpdatesResponse, LibraryNode, LibraryNodeState,
+    GetTrackUpdatesResponse, LibraryNode, LibraryNodeState, ReplaceWithNodeRequest,
+    ReplaceWithNodeResponse, TogglePlayRequest,
 };
 
 use std::{
@@ -44,6 +45,7 @@ impl RpcClient {
             library_node_cache,
         })
     }
+
     pub async fn get_library_node(
         &mut self,
         uuid: &str,
@@ -101,5 +103,29 @@ impl RpcClient {
             .await?
             .into_inner();
         Ok(stream)
+    }
+
+    pub async fn replace_queue_with(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
+        let replace_with_node_request = Request::new(ReplaceWithNodeRequest {
+            uuid: uuid.to_string(),
+        });
+
+        let response = self
+            .client
+            .replace_with_node(replace_with_node_request)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn toggle_play(&mut self) -> Result<(), Box<dyn Error>> {
+        let toggle_play_request = Request::new(TogglePlayRequest {});
+
+        let response = self
+            .client
+            .toggle_play(toggle_play_request)
+            .await?;
+
+        Ok(())
     }
 }
