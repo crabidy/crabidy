@@ -196,6 +196,9 @@ impl ProviderClient for ProviderOrchestrator {
         root_node
     }
     async fn get_lib_node(&self, uuid: &str) -> Result<LibraryNode, ProviderError> {
+        if uuid == "/" {
+            return Ok(self.get_lib_root());
+        }
         if uuid == "tidal" {
             return Ok(self.tidal_client.get_lib_root());
         }
