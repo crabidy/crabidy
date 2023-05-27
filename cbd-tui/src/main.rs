@@ -3,7 +3,7 @@ mod rpc;
 use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient, get_queue_updates_response::QueueUpdateResult,
     ActiveTrack, GetLibraryNodeRequest, GetQueueUpdatesRequest, GetQueueUpdatesResponse,
-    GetTrackUpdatesResponse, LibraryNode, LibraryNodeState, Queue,
+    GetTrackUpdatesResponse, LibraryNode, LibraryNodeState, Queue, Track, TrackPlayState,
 };
 
 use crossterm::{
@@ -20,7 +20,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Corner, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, Gauge, LineGauge, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
 use rpc::RpcClient;
@@ -287,13 +287,21 @@ impl LibraryView {
 }
 
 struct NowPlayingView {
-    text: String,
+    completion: Option<u32>,
+    elapsed: Option<f64>,
+    playing_state: TrackPlayState,
+    track: Option<Track>,
 }
 
 impl NowPlayingView {
     fn update(&mut self, active_track: ActiveTrack) {
-        if let Some(track_info) = active_track.track {
-            self.text = format!("Playing {} - {}", track_info.title, active_track.play_state);
+        self.track = active_track.track.clone();
+        self.playing_state = active_track.play_state();
+        if let Some(track) = &self.track {
+            if let Some(duration) = track.duration {
+                self.completion = Some(active_track.completion);
+                self.elapsed = Some(active_track.completion as f64 / duration as f64);
+            }
         }
     }
 }
@@ -321,7 +329,10 @@ impl App {
             prev_selected: 0,
         };
         let now_playing = NowPlayingView {
-            text: "Not playing".to_string(),
+            completion: None,
+            elapsed: None,
+            playing_state: TrackPlayState::Unspecified,
+            track: None,
         };
         App {
             focus: UiFocus::Library,
@@ -591,7 +602,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     f.render_stateful_widget(library_list, main[0], &mut app.library.list_state);
 
-    let now_playing = Layout::default()
+    let right_side = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(70), Constraint::Max(10)].as_ref())
         .split(main[1]);
@@ -614,16 +625,77 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    f.render_stateful_widget(queue_list, now_playing[0], &mut app.queue.list_state);
+    f.render_stateful_widget(queue_list, right_side[0], &mut app.queue.list_state);
 
-    let media_info = Block::default()
-        .title("Now playing")
-        .borders(Borders::ALL)
-        .style(Style::default());
+    let now_playing_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Max(8), Constraint::Max(1)])
+        .split(right_side[1]);
 
-    let now_playing_text = Paragraph::new(app.now_playing.text.to_string())
-        .block(media_info)
-        .alignment(Alignment::Center);
-    // f.render_widget(media_info, now_playing[1]);
-    f.render_widget(now_playing_text, now_playing[1]);
+    let media_info_text = if let Some(track) = &app.now_playing.track {
+        let play_text = match &app.now_playing.playing_state {
+            TrackPlayState::Loading => "▼",
+            TrackPlayState::Paused => "■",
+            TrackPlayState::Playing => "♫",
+            _ => "",
+        };
+        vec![
+            Spans::from(Span::raw("")),
+            Spans::from(Span::raw(play_text)),
+            Spans::from(vec![
+                Span::styled(
+                    track.title.to_string(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" by "),
+                Span::styled(
+                    track.artist.to_string(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Spans::from(Span::raw("Album missing")),
+        ]
+    } else {
+        vec![
+            Spans::from(Span::raw("")),
+            Spans::from(Span::raw("")),
+            Spans::from(Span::raw("No track playing")),
+        ]
+    };
+
+    let media_info_p = Paragraph::new(media_info_text)
+        .block(Block::default().title("Now playing").borders(Borders::ALL))
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(media_info_p, now_playing_layout[0]);
+
+    let elapsed_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(10), Constraint::Max(15)])
+        .split(now_playing_layout[1]);
+
+    if let (Some(elapsed), Some(track)) = (app.now_playing.elapsed, &app.now_playing.track) {
+        let progress = LineGauge::default()
+            .block(Block::default().borders(Borders::NONE))
+            .gauge_style(Style::default().fg(Color::Cyan).bg(Color::Black))
+            .ratio(elapsed);
+        f.render_widget(progress, elapsed_layout[0]);
+
+        let c = app.now_playing.completion.unwrap_or(0);
+        let l = track.duration.unwrap_or(0);
+        let completion = format!(
+            "{:0>1}:{:0>2}:{:0>2}/{:0>1}:{:0>2}:{:0>2}",
+            (c / 60 / 60),
+            (c / 60) % 60,
+            c % 60,
+            (l / 60 / 60),
+            (l / 60) % 60,
+            l % 60
+        );
+
+        let time_text = Span::raw(completion);
+        let time_p = Paragraph::new(Spans::from(time_text));
+        f.render_widget(time_p, elapsed_layout[1]);
+    }
 }
