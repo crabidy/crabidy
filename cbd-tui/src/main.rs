@@ -65,6 +65,34 @@ trait ListView {
         }
     }
 
+    fn down(&mut self) {
+        if self.is_empty() {
+            return;
+        }
+        if let Some(i) = self.selected() {
+            let next = if i < self.get_size() - 15 {
+                i + 15
+            } else {
+                self.get_size() - 1
+            };
+            self.select(Some(next));
+        } else {
+            self.select(Some(0));
+        }
+    }
+
+    fn up(&mut self) {
+        if self.is_empty() {
+            return;
+        }
+        if let Some(i) = self.selected() {
+            let prev = if i < 15 { 0 } else { i - 15 };
+            self.select(Some(prev));
+        } else {
+            self.select(Some(0));
+        }
+    }
+
     fn is_selected(&self) -> bool {
         self.selected().is_some()
     }
@@ -87,6 +115,7 @@ enum UiItemKind {
 }
 
 struct UiItem {
+    active: bool,
     uuid: String,
     title: String,
     kind: UiItemKind,
@@ -143,10 +172,12 @@ impl QueueView {
         self.list = queue
             .tracks
             .iter()
-            .map(|t| UiItem {
+            .enumerate()
+            .map(|(i, t)| UiItem {
                 uuid: t.uuid.clone(),
-                title: t.title.clone(),
+                title: format!("{} - {}", t.artist, t.title),
                 kind: UiItemKind::Track,
+                active: i == queue.current as usize,
             })
             .collect();
     }
@@ -233,8 +264,9 @@ impl LibraryView {
                 .iter()
                 .map(|t| UiItem {
                     uuid: t.uuid.clone(),
-                    title: t.title.clone(),
+                    title: format!("{} - {}", t.artist, t.title),
                     kind: UiItemKind::Track,
+                    active: false,
                 })
                 .collect();
         } else {
@@ -246,6 +278,7 @@ impl LibraryView {
                     uuid: c.uuid.clone(),
                     title: c.title.clone(),
                     kind: UiItemKind::Node,
+                    active: false,
                 })
                 .collect();
         }
@@ -330,7 +363,7 @@ enum MessageFromUi {
 async fn orchestrate<'a>(
     (tx, rx): (Sender<MessageToUi>, Receiver<MessageFromUi>),
 ) -> Result<(), Box<dyn Error>> {
-    let mut rpc_client = rpc::RpcClient::connect("http://192.168.178.28:50051").await?;
+    let mut rpc_client = rpc::RpcClient::connect("http://192.168.178.32:50051").await?;
 
     if let Some(root_node) = rpc_client.get_library_node("/").await? {
         tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
@@ -461,6 +494,12 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('k')) => {
                             app.library.prev();
                         }
+                        (UiFocus::Library, KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+                            app.library.down();
+                        }
+                        (UiFocus::Library, KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+                            app.library.up();
+                        }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('h')) => {
                             app.library.ascend(&tx);
                         }
@@ -475,6 +514,12 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         }
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('k')) => {
                             app.queue.prev();
+                        }
+                        (UiFocus::Queue, KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+                            app.queue.down();
+                        }
+                        (UiFocus::Queue, KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+                            app.queue.up();
                         }
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Enter) => {
                             app.queue.play_selected(&tx);
@@ -514,7 +559,6 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .library
         .list
         .iter()
-        // FIXME: why to_string() ??
         .map(|i| ListItem::new(Span::from(i.title.to_string())))
         .collect();
 
@@ -541,8 +585,10 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .queue
         .list
         .iter()
-        // FIXME: why to_string() ??
-        .map(|i| ListItem::new(Span::from(i.title.to_string())))
+        .map(|i| {
+            let color = if i.active { Color::Red } else { Color::Reset };
+            ListItem::new(Span::from(i.title.to_string())).style(Style::default().fg(color))
+        })
         .collect();
 
     let queue_list = List::new(queue_items)
