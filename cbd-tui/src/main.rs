@@ -71,7 +71,7 @@ trait ListView {
             return;
         }
         if let Some(i) = self.selected() {
-            let next = if i < self.get_size() - 15 {
+            let next = if i < self.get_size().saturating_sub(15) {
                 i + 15
             } else {
                 self.get_size() - 1
@@ -87,7 +87,7 @@ trait ListView {
             return;
         }
         if let Some(i) = self.selected() {
-            let prev = if i < 15 { 0 } else { i - 15 };
+            let prev = if i < 15 { 0 } else { i.saturating_sub(15) };
             self.select(Some(prev));
         } else {
             self.select(Some(0));
@@ -446,7 +446,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::task::spawn_blocking(|| {
         run_ui(ui_tx, ui_rx);
-    }).await;
+    })
+    .await;
 
     Ok(())
 }
