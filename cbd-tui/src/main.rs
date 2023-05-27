@@ -354,7 +354,6 @@ enum MessageToUi {
 
 // FIXME: Rename this
 enum MessageFromUi {
-    Quit,
     GetLibraryNode(String),
     ReplaceWithItem(String, UiItemKind),
     SetCurrentTrack(usize),
@@ -369,9 +368,6 @@ async fn poll(
     select! {
         Ok(msg) = &mut rx.recv_async() => {
             match msg {
-                MessageFromUi::Quit => {
-                    return Ok(());
-                },
                 MessageFromUi::GetLibraryNode(uuid) => {
                     if let Some(node) = rpc_client.get_library_node(&uuid).await? {
                         tx.send(MessageToUi::ReplaceLibraryNode(node.clone()));
@@ -445,14 +441,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (ui_tx, rx): (Sender<MessageFromUi>, Receiver<MessageFromUi>) = flume::unbounded();
     let (tx, ui_rx): (Sender<MessageToUi>, Receiver<MessageToUi>) = flume::unbounded();
 
-    thread::spawn(|| {
-        run_ui(ui_tx, ui_rx);
-    });
-
     // FIXME: unwrap
     tokio::spawn(async move { orchestrate((tx, rx)).await.ok() });
 
-    signal::ctrl_c().await.unwrap();
+    tokio::task::spawn_blocking(|| {
+        run_ui(ui_tx, ui_rx);
+    }).await;
 
     Ok(())
 }
@@ -499,7 +493,6 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                 if key.kind == KeyEventKind::Press {
                     match (app.focus, key.modifiers, key.code) {
                         (_, KeyModifiers::NONE, KeyCode::Char('q')) => {
-                            tx.send(MessageFromUi::Quit);
                             break;
                         }
                         (_, KeyModifiers::NONE, KeyCode::Tab) => app.cycle_active(),
