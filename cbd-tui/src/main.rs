@@ -25,15 +25,16 @@ use ratatui::{
 };
 use rpc::RpcClient;
 use std::{
+    cell::RefCell,
     collections::HashMap,
     error::Error,
     fmt, io, println, thread,
     time::{Duration, Instant},
     vec,
 };
-use tokio::{select, signal, task};
+use tokio::{fs, select, signal, task};
 use tokio_stream::StreamExt;
-use tonic::{transport::Channel, Request, Streaming};
+use tonic::{transport::Channel, Request, Status, Streaming};
 
 trait ListView {
     fn get_size(&self) -> usize;
@@ -360,62 +361,82 @@ enum MessageFromUi {
     TogglePlay,
 }
 
+async fn poll(
+    rpc_client: &mut RpcClient,
+    rx: &Receiver<MessageFromUi>,
+    tx: &Sender<MessageToUi>,
+) -> Result<(), Box<dyn Error>> {
+    select! {
+        Ok(msg) = &mut rx.recv_async() => {
+            match msg {
+                MessageFromUi::Quit => {
+                    return Ok(());
+                },
+                MessageFromUi::GetLibraryNode(uuid) => {
+                    if let Some(node) = rpc_client.get_library_node(&uuid).await? {
+                        tx.send(MessageToUi::ReplaceLibraryNode(node.clone()));
+                    }
+                },
+                MessageFromUi::ReplaceWithItem(uuid, kind) => {
+                    match kind {
+                        UiItemKind::Node => {
+                            rpc_client.replace_queue_with_node(&uuid).await?
+                        }
+                        UiItemKind::Track => {
+                            rpc_client.replace_queue_with_track(&uuid).await?
+                        }
+                    }
+                }
+                MessageFromUi::TogglePlay => {
+                    rpc_client.toggle_play().await?
+                }
+                MessageFromUi::SetCurrentTrack(pos) => {
+                    rpc_client.set_current_track(pos).await?
+                }
+
+            }
+        }
+        Some(resp) = rpc_client.queue_updates_stream.next() => {
+            match resp {
+                Ok(resp) => {
+                    if let Some(res) = resp.queue_update_result {
+                        tx.send_async(MessageToUi::QueueStreamUpdate(res)).await?;
+                    }
+                }
+                Err(_) => {
+                    rpc_client.reconnect_queue_updates_stream().await;
+                }
+
+            }
+        }
+        Some(resp) = rpc_client.track_updates_stream.next() => {
+            match resp {
+                Ok(resp) => {
+                    if let Some(active_track) = resp.active_track {
+                        tx.send_async(MessageToUi::TrackStreamUpdate(active_track)).await?;
+                    }
+                }
+                Err(_) => {
+                    rpc_client.reconnect_track_updates_stream().await;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn orchestrate<'a>(
     (tx, rx): (Sender<MessageToUi>, Receiver<MessageFromUi>),
 ) -> Result<(), Box<dyn Error>> {
-    let mut rpc_client = rpc::RpcClient::connect("http://192.168.178.32:50051").await?;
+    let mut rpc_client = rpc::RpcClient::connect("http://127.0.0.1:50051").await?;
 
     if let Some(root_node) = rpc_client.get_library_node("/").await? {
         tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
     }
 
-    // FIXME: stream failures, do we need to re-establish the stream?
-    let mut queue_update_stream = rpc_client.get_queue_updates_stream().await?;
-    let mut track_update_stream = rpc_client.get_track_updates_stream().await?;
-
     loop {
-        select! {
-            Ok(msg) = &mut rx.recv_async() => {
-                match msg {
-                    MessageFromUi::Quit => {
-                        break Ok(());
-                    },
-                    MessageFromUi::GetLibraryNode(uuid) => {
-                        if let Some(node) = rpc_client.get_library_node(&uuid).await? {
-                            tx.send(MessageToUi::ReplaceLibraryNode(node.clone()));
-                        }
-                    },
-                    MessageFromUi::ReplaceWithItem(uuid, kind) => {
-                        match kind {
-                            UiItemKind::Node => {
-                                rpc_client.replace_queue_with_node(&uuid).await?
-                            }
-                            UiItemKind::Track => {
-                                rpc_client.replace_queue_with_track(&uuid).await?
-                            }
-                        }
-                    }
-                    MessageFromUi::TogglePlay => {
-                        rpc_client.toggle_play().await?
-                    }
-                    MessageFromUi::SetCurrentTrack(pos) => {
-                        rpc_client.set_current_track(pos).await?
-                    }
-
-                }
-            }
-            Some(Ok(resp)) = queue_update_stream.next() => {
-                if let Some(res) = resp.queue_update_result {
-                    tx.send_async(MessageToUi::QueueStreamUpdate(res)).await;
-                }
-            }
-            Some(Ok(resp)) = track_update_stream.next() => {
-                if let Some(active_track) = resp.active_track {
-                    tx.send_async(MessageToUi::TrackStreamUpdate(active_track)).await;
-                }
-
-            }
-        }
+        poll(&mut rpc_client, &rx, &tx).await.ok();
     }
 }
 
@@ -429,7 +450,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // FIXME: unwrap
-    tokio::spawn(async move { orchestrate((tx, rx)).await.unwrap() });
+    tokio::spawn(async move { orchestrate((tx, rx)).await.ok() });
 
     signal::ctrl_c().await.unwrap();
 

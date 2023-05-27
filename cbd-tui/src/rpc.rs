@@ -9,13 +9,16 @@ use crabidy_core::proto::crabidy::{
 use std::{
     collections::HashMap,
     error::Error,
-    fmt, io, println, thread,
+    fmt, io, mem, println, thread,
     time::{Duration, Instant},
     vec,
 };
 use tokio::task;
 use tokio_stream::StreamExt;
-use tonic::{transport::Channel, Request, Streaming};
+use tonic::{
+    transport::{Channel, Endpoint},
+    Request, Streaming,
+};
 
 #[derive(Debug)]
 enum RpcClientError {
@@ -35,16 +38,65 @@ impl Error for RpcClientError {}
 pub struct RpcClient {
     library_node_cache: HashMap<String, LibraryNode>,
     client: CrabidyServiceClient<Channel>,
+    pub queue_updates_stream: Streaming<GetQueueUpdatesResponse>,
+    pub track_updates_stream: Streaming<GetTrackUpdatesResponse>,
 }
 
 impl RpcClient {
-    pub async fn connect(addr: &'static str) -> Result<RpcClient, tonic::transport::Error> {
-        let client = CrabidyServiceClient::connect(addr).await?;
+    pub async fn connect(addr: &'static str) -> Result<RpcClient, Box<dyn Error>> {
+        let endpoint = Endpoint::from_static(addr).connect_lazy();
+        let mut client = CrabidyServiceClient::new(endpoint);
+
+        let queue_updates_stream = Self::get_queue_updates_stream(&mut client).await;
+        let track_updates_stream = Self::get_track_updates_stream(&mut client).await;
         let library_node_cache: HashMap<String, LibraryNode> = HashMap::new();
+
         Ok(RpcClient {
             client,
             library_node_cache,
+            track_updates_stream,
+            queue_updates_stream,
         })
+    }
+
+    async fn get_queue_updates_stream(
+        client: &mut CrabidyServiceClient<Channel>,
+    ) -> Streaming<GetQueueUpdatesResponse> {
+        loop {
+            let get_queue_updates_request = Request::new(GetQueueUpdatesRequest { timestamp: 0 });
+            if let Ok(resp) = client.get_queue_updates(get_queue_updates_request).await {
+                return resp.into_inner();
+            } else {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
+    }
+
+    async fn get_track_updates_stream(
+        client: &mut CrabidyServiceClient<Channel>,
+    ) -> Streaming<GetTrackUpdatesResponse> {
+        loop {
+            let get_track_updates_request = Request::new(GetTrackUpdatesRequest {
+                type_whitelist: Vec::new(),
+                type_blacklist: Vec::new(),
+                updates_skipped: 0,
+            });
+            if let Ok(resp) = client.get_track_updates(get_track_updates_request).await {
+                return resp.into_inner();
+            } else {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
+    }
+
+    pub async fn reconnect_queue_updates_stream(&mut self) {
+        let queue_updates_stream = Self::get_queue_updates_stream(&mut self.client).await;
+        mem::replace(&mut self.queue_updates_stream, queue_updates_stream);
+    }
+
+    pub async fn reconnect_track_updates_stream(&mut self) {
+        let track_updates_stream = Self::get_track_updates_stream(&mut self.client).await;
+        mem::replace(&mut self.track_updates_stream, track_updates_stream);
     }
 
     pub async fn get_library_node(
@@ -67,43 +119,10 @@ impl RpcClient {
         if let Some(library_node) = response.into_inner().node {
             self.library_node_cache
                 .insert(uuid.to_string(), library_node);
-            // FIXME: is that necessary?
             return Ok(self.library_node_cache.get(uuid));
         }
 
         Err(Box::new(RpcClientError::NotFound))
-    }
-
-    pub async fn get_queue_updates_stream(
-        &mut self,
-    ) -> Result<Streaming<GetQueueUpdatesResponse>, Box<dyn Error>> {
-        // FIXME: Adjust request params to what we need
-        let get_queue_updates_request = Request::new(GetQueueUpdatesRequest { timestamp: 0 });
-
-        let stream = self
-            .client
-            .get_queue_updates(get_queue_updates_request)
-            .await?
-            .into_inner();
-        Ok(stream)
-    }
-
-    pub async fn get_track_updates_stream(
-        &mut self,
-    ) -> Result<Streaming<GetTrackUpdatesResponse>, Box<dyn Error>> {
-        // FIXME: Adjust request params to what we need
-        let get_queue_updates_request = Request::new(GetTrackUpdatesRequest {
-            type_whitelist: Vec::new(),
-            type_blacklist: Vec::new(),
-            updates_skipped: 0,
-        });
-
-        let stream = self
-            .client
-            .get_track_updates(get_queue_updates_request)
-            .await?
-            .into_inner();
-        Ok(stream)
     }
 
     pub async fn replace_queue_with_node(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
