@@ -2,7 +2,8 @@ use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient, get_queue_updates_response::QueueUpdateResult,
     GetLibraryNodeRequest, GetQueueUpdatesRequest, GetQueueUpdatesResponse, GetTrackUpdatesRequest,
     GetTrackUpdatesResponse, LibraryNode, LibraryNodeState, ReplaceWithNodeRequest,
-    ReplaceWithNodeResponse, TogglePlayRequest,
+    ReplaceWithNodeResponse, ReplaceWithTrackRequest, ReplaceWithTrackResponse,
+    SetCurrentTrackRequest, SetCurrentTrackResponse, TogglePlayRequest,
 };
 
 use std::{
@@ -105,7 +106,7 @@ impl RpcClient {
         Ok(stream)
     }
 
-    pub async fn replace_queue_with(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn replace_queue_with_node(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
         let replace_with_node_request = Request::new(ReplaceWithNodeRequest {
             uuid: uuid.to_string(),
         });
@@ -118,12 +119,35 @@ impl RpcClient {
         Ok(())
     }
 
-    pub async fn toggle_play(&mut self) -> Result<(), Box<dyn Error>> {
-        let toggle_play_request = Request::new(TogglePlayRequest {});
+    pub async fn replace_queue_with_track(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
+        let replace_with_track_request = Request::new(ReplaceWithTrackRequest {
+            uuid: uuid.to_string(),
+        });
 
         let response = self
             .client
-            .toggle_play(toggle_play_request)
+            .replace_with_track(replace_with_track_request)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn toggle_play(&mut self) -> Result<(), Box<dyn Error>> {
+        let toggle_play_request = Request::new(TogglePlayRequest {});
+
+        let response = self.client.toggle_play(toggle_play_request).await?;
+
+        Ok(())
+    }
+
+    pub async fn set_current_track(&mut self, pos: usize) -> Result<(), Box<dyn Error>> {
+        let set_current_track_request = Request::new(SetCurrentTrackRequest {
+            position: pos as u32,
+        });
+
+        let response = self
+            .client
+            .set_current_track(set_current_track_request)
             .await?;
 
         Ok(())

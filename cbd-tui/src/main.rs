@@ -7,7 +7,10 @@ use crabidy_core::proto::crabidy::{
 };
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+        ModifierKeyCode,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -71,9 +74,22 @@ trait ListView {
     }
 }
 
+#[derive(Clone, Copy)]
+enum UiFocus {
+    Library,
+    Queue,
+}
+
+#[derive(Clone, Copy)]
+enum UiItemKind {
+    Node,
+    Track,
+}
+
 struct UiItem {
     uuid: String,
     title: String,
+    kind: UiItemKind,
 }
 
 struct QueueView {
@@ -103,18 +119,24 @@ impl ListView for QueueView {
     }
 }
 
-#[derive(Clone, Copy)]
-enum UiFocus {
-    Library,
-    Queue,
-}
-
 impl QueueView {
     fn check_focus(&mut self, focus: UiFocus) {
         if !self.is_selected() && matches!(focus, UiFocus::Queue) {
             self.select(Some(self.prev_selected()));
         } else if self.is_selected() && !matches!(focus, UiFocus::Queue) {
             self.select(None);
+        }
+    }
+    fn skip(&self, tx: &Sender<MessageFromUi>) {
+        if let Some(pos) = self.selected() {
+            if pos < self.get_size() - 1 {
+                tx.send(MessageFromUi::SetCurrentTrack(pos + 1));
+            }
+        }
+    }
+    fn play_selected(&self, tx: &Sender<MessageFromUi>) {
+        if let Some(pos) = self.selected() {
+            tx.send(MessageFromUi::SetCurrentTrack(pos));
         }
     }
     fn update(&mut self, queue: Queue) {
@@ -124,6 +146,7 @@ impl QueueView {
             .map(|t| UiItem {
                 uuid: t.uuid.clone(),
                 title: t.title.clone(),
+                kind: UiItemKind::Track,
             })
             .collect();
     }
@@ -183,12 +206,14 @@ impl LibraryView {
     }
     fn dive(&mut self, tx: &Sender<MessageFromUi>) {
         if let Some(item) = self.get_selected() {
-            tx.send(MessageFromUi::GetLibraryNode(item.uuid.clone()));
+            if let UiItemKind::Node = item.kind {
+                tx.send(MessageFromUi::GetLibraryNode(item.uuid.clone()));
+            }
         }
     }
-    fn queue_replace_with_selected(&mut self, tx: &Sender<MessageFromUi>) {
+    fn queue_replace_with_item(&mut self, tx: &Sender<MessageFromUi>) {
         if let Some(item) = self.get_selected() {
-            tx.send(MessageFromUi::ReplaceWithNode(item.uuid.clone()));
+            tx.send(MessageFromUi::ReplaceWithItem(item.uuid.clone(), item.kind));
         }
     }
     fn update(&mut self, node: LibraryNode) {
@@ -209,6 +234,7 @@ impl LibraryView {
                 .map(|t| UiItem {
                     uuid: t.uuid.clone(),
                     title: t.title.clone(),
+                    kind: UiItemKind::Track,
                 })
                 .collect();
         } else {
@@ -219,6 +245,7 @@ impl LibraryView {
                 .map(|c| UiItem {
                     uuid: c.uuid.clone(),
                     title: c.title.clone(),
+                    kind: UiItemKind::Node,
                 })
                 .collect();
         }
@@ -295,14 +322,15 @@ enum MessageToUi {
 enum MessageFromUi {
     Quit,
     GetLibraryNode(String),
-    ReplaceWithNode(String),
+    ReplaceWithItem(String, UiItemKind),
+    SetCurrentTrack(usize),
     TogglePlay,
 }
 
 async fn orchestrate<'a>(
     (tx, rx): (Sender<MessageToUi>, Receiver<MessageFromUi>),
 ) -> Result<(), Box<dyn Error>> {
-    let mut rpc_client = rpc::RpcClient::connect("http://[::1]:50051").await?;
+    let mut rpc_client = rpc::RpcClient::connect("http://192.168.178.28:50051").await?;
 
     if let Some(root_node) = rpc_client.get_library_node("/").await? {
         tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
@@ -324,12 +352,23 @@ async fn orchestrate<'a>(
                             tx.send(MessageToUi::ReplaceLibraryNode(node.clone()));
                         }
                     },
-                    MessageFromUi::ReplaceWithNode(uuid) => {
-                        rpc_client.replace_queue_with(&uuid).await?
+                    MessageFromUi::ReplaceWithItem(uuid, kind) => {
+                        match kind {
+                            UiItemKind::Node => {
+                                rpc_client.replace_queue_with_node(&uuid).await?
+                            }
+                            UiItemKind::Track => {
+                                rpc_client.replace_queue_with_track(&uuid).await?
+                            }
+                        }
                     }
                     MessageFromUi::TogglePlay => {
                         rpc_client.toggle_play().await?
                     }
+                    MessageFromUi::SetCurrentTrack(pos) => {
+                        rpc_client.set_current_track(pos).await?
+                    }
+
                 }
             }
             Some(Ok(resp)) = queue_update_stream.next() => {
@@ -404,35 +443,41 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
         if crossterm::event::poll(timeout).unwrap() {
             if let Event::Key(key) = event::read().unwrap() {
                 if key.kind == KeyEventKind::Press {
-                    match (app.focus, key.code) {
-                        (_, KeyCode::Char('q')) => {
+                    match (app.focus, key.modifiers, key.code) {
+                        (_, KeyModifiers::NONE, KeyCode::Char('q')) => {
                             tx.send(MessageFromUi::Quit);
                             break;
                         }
-                        (_, KeyCode::Tab) => app.cycle_active(),
-                        (_, KeyCode::Char(' ')) => {
+                        (_, KeyModifiers::NONE, KeyCode::Tab) => app.cycle_active(),
+                        (_, KeyModifiers::NONE, KeyCode::Char(' ')) => {
                             tx.send(MessageFromUi::TogglePlay);
                         }
-                        (UiFocus::Library, KeyCode::Char('j')) => {
+                        (_, KeyModifiers::CONTROL, KeyCode::Char('n')) => {
+                            app.queue.skip(&tx);
+                        }
+                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('j')) => {
                             app.library.next();
                         }
-                        (UiFocus::Library, KeyCode::Char('k')) => {
+                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('k')) => {
                             app.library.prev();
                         }
-                        (UiFocus::Library, KeyCode::Char('h')) => {
+                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('h')) => {
                             app.library.ascend(&tx);
                         }
-                        (UiFocus::Library, KeyCode::Char('l')) => {
+                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('l')) => {
                             app.library.dive(&tx);
                         }
-                        (UiFocus::Library, KeyCode::Enter) => {
-                            app.library.queue_replace_with_selected(&tx);
+                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Enter) => {
+                            app.library.queue_replace_with_item(&tx);
                         }
-                        (UiFocus::Queue, KeyCode::Char('j')) => {
+                        (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('j')) => {
                             app.queue.next();
                         }
-                        (UiFocus::Queue, KeyCode::Char('k')) => {
+                        (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('k')) => {
                             app.queue.prev();
+                        }
+                        (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Enter) => {
+                            app.queue.play_selected(&tx);
                         }
                         _ => {}
                     }
