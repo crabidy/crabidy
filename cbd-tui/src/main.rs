@@ -20,7 +20,9 @@ use ratatui::{
     layout::{Alignment, Constraint, Corner, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Gauge, LineGauge, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{
+        Block, BorderType, Borders, Gauge, LineGauge, List, ListItem, ListState, Paragraph, Wrap,
+    },
     Frame, Terminal,
 };
 use rpc::RpcClient;
@@ -36,11 +38,14 @@ use tokio::{fs, select, signal, task};
 use tokio_stream::StreamExt;
 use tonic::{transport::Channel, Request, Status, Streaming};
 
+const COLOR_PRIMARY: Color = Color::Rgb(129, 161, 193);
+// const COLOR_PRIMARY_DARK: Color = Color::Rgb(94, 129, 172);
+const COLOR_PRIMARY_DARK: Color = Color::Rgb(59, 66, 82);
+
 trait ListView {
     fn get_size(&self) -> usize;
     fn select(&mut self, idx: Option<usize>);
     fn selected(&self) -> Option<usize>;
-    fn prev_selected(&self) -> usize;
 
     fn next(&mut self) {
         if self.is_empty() {
@@ -101,6 +106,14 @@ trait ListView {
     fn is_empty(&self) -> bool {
         self.get_size() == 0
     }
+
+    fn update_selection(&mut self) {
+        if !self.is_empty() && !self.is_selected() {
+            self.select(Some(0));
+        } else if self.is_empty() {
+            self.select(None);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -125,7 +138,6 @@ struct UiItem {
 struct QueueView {
     list: Vec<UiItem>,
     list_state: ListState,
-    prev_selected: usize,
 }
 
 impl ListView for QueueView {
@@ -134,29 +146,15 @@ impl ListView for QueueView {
     }
 
     fn select(&mut self, idx: Option<usize>) {
-        if let Some(pos) = idx {
-            self.prev_selected = pos;
-        }
         self.list_state.select(idx);
     }
 
     fn selected(&self) -> Option<usize> {
         self.list_state.selected()
     }
-
-    fn prev_selected(&self) -> usize {
-        self.prev_selected
-    }
 }
 
 impl QueueView {
-    fn check_focus(&mut self, focus: UiFocus) {
-        if !self.is_selected() && matches!(focus, UiFocus::Queue) {
-            self.select(Some(self.prev_selected()));
-        } else if self.is_selected() && !matches!(focus, UiFocus::Queue) {
-            self.select(None);
-        }
-    }
     fn skip(&self, tx: &Sender<MessageFromUi>) {
         if let Some(pos) = self.selected() {
             if pos < self.get_size() - 1 {
@@ -181,6 +179,8 @@ impl QueueView {
                 active: i == queue.current as usize,
             })
             .collect();
+
+        self.update_selection();
     }
 }
 
@@ -211,20 +211,9 @@ impl ListView for LibraryView {
     fn selected(&self) -> Option<usize> {
         self.list_state.selected()
     }
-
-    fn prev_selected(&self) -> usize {
-        *self.positions.get(&self.uuid).unwrap_or(&0)
-    }
 }
 
 impl LibraryView {
-    fn check_focus(&mut self, focus: UiFocus) {
-        if !self.is_selected() && matches!(focus, UiFocus::Library) {
-            self.select(Some(self.prev_selected()));
-        } else if self.is_selected() && !matches!(focus, UiFocus::Library) {
-            self.select(None);
-        }
-    }
     fn get_selected(&self) -> Option<&UiItem> {
         if let Some(idx) = self.list_state.selected() {
             return Some(&self.list[idx]);
@@ -247,6 +236,9 @@ impl LibraryView {
         if let Some(item) = self.get_selected() {
             tx.send(MessageFromUi::ReplaceWithItem(item.uuid.clone(), item.kind));
         }
+    }
+    fn prev_selected(&self) -> usize {
+        *self.positions.get(&self.uuid).unwrap_or(&0)
     }
     fn update(&mut self, node: LibraryNode) {
         if node.tracks.is_empty() && node.children.is_empty() {
@@ -283,6 +275,8 @@ impl LibraryView {
                 })
                 .collect();
         }
+
+        self.update_selection();
     }
 }
 
@@ -326,7 +320,6 @@ impl App {
         let queue = QueueView {
             list: Vec::new(),
             list_state: ListState::default(),
-            prev_selected: 0,
         };
         let now_playing = NowPlayingView {
             completion: None,
@@ -340,11 +333,6 @@ impl App {
             now_playing,
             queue,
         }
-    }
-
-    fn check_focus(&mut self) {
-        self.library.check_focus(self.focus);
-        self.queue.check_focus(self.focus);
     }
 
     fn cycle_active(&mut self) {
@@ -557,7 +545,6 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
         }
 
         if last_tick.elapsed() >= tick_rate {
-            app.check_focus();
             last_tick = Instant::now();
         }
     }
@@ -576,6 +563,9 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
 fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let size = f.size();
 
+    let library_focused = matches!(app.focus, UiFocus::Library);
+    let queue_focused = matches!(app.focus, UiFocus::Queue);
+
     let main = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
@@ -592,11 +582,21 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(if library_focused {
+                    COLOR_PRIMARY
+                } else {
+                    COLOR_PRIMARY_DARK
+                }))
                 .title(app.library.title.clone()),
         )
         .highlight_style(
             Style::default()
-                .bg(Color::LightBlue)
+                .bg(if library_focused {
+                    COLOR_PRIMARY
+                } else {
+                    COLOR_PRIMARY_DARK
+                })
                 .add_modifier(Modifier::BOLD),
         );
 
@@ -618,10 +618,23 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .collect();
 
     let queue_list = List::new(queue_items)
-        .block(Block::default().borders(Borders::ALL).title("Queue"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(if queue_focused {
+                    COLOR_PRIMARY
+                } else {
+                    COLOR_PRIMARY_DARK
+                }))
+                .title("Queue"),
+        )
         .highlight_style(
             Style::default()
-                .bg(Color::LightBlue)
+                .bg(if queue_focused {
+                    COLOR_PRIMARY
+                } else {
+                    COLOR_PRIMARY_DARK
+                })
                 .add_modifier(Modifier::BOLD),
         );
 
