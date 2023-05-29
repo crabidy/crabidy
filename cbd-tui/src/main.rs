@@ -41,6 +41,8 @@ use tonic::{transport::Channel, Request, Status, Streaming};
 const COLOR_PRIMARY: Color = Color::Rgb(129, 161, 193);
 // const COLOR_PRIMARY_DARK: Color = Color::Rgb(94, 129, 172);
 const COLOR_PRIMARY_DARK: Color = Color::Rgb(59, 66, 82);
+// const COLOR_RED: Color = Color::Rgb(191, 97, 106);
+// const COLOR_BRIGHT: Color = Color::Rgb(216, 222, 233);
 
 trait ListView {
     fn get_size(&self) -> usize;
@@ -612,8 +614,13 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .list
         .iter()
         .map(|i| {
-            let color = if i.active { Color::Red } else { Color::Reset };
-            ListItem::new(Span::from(i.title.to_string())).style(Style::default().fg(color))
+            // let color = if i.active { COLOR_RED } else { Color::Reset };
+            let title = if i.active {
+                format!("> {}", i.title)
+            } else {
+                i.title.to_string()
+            };
+            ListItem::new(Span::from(title)).style(Style::default())
         })
         .collect();
 
