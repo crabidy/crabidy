@@ -41,6 +41,7 @@ use tonic::{transport::Channel, Request, Status, Streaming};
 const COLOR_PRIMARY: Color = Color::Rgb(129, 161, 193);
 // const COLOR_PRIMARY_DARK: Color = Color::Rgb(94, 129, 172);
 const COLOR_PRIMARY_DARK: Color = Color::Rgb(59, 66, 82);
+const COLOR_SECONDARY: Color = Color::Rgb(180, 142, 173);
 // const COLOR_RED: Color = Color::Rgb(191, 97, 106);
 // const COLOR_BRIGHT: Color = Color::Rgb(216, 222, 233);
 
@@ -628,6 +629,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(if queue_focused {
                     COLOR_PRIMARY
                 } else {
@@ -684,7 +686,13 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     };
 
     let media_info_p = Paragraph::new(media_info_text)
-        .block(Block::default().title("Now playing").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("Now playing")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(COLOR_SECONDARY)),
+        )
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
 
@@ -698,7 +706,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     if let (Some(elapsed), Some(track)) = (app.now_playing.elapsed, &app.now_playing.track) {
         let progress = LineGauge::default()
             .block(Block::default().borders(Borders::NONE))
-            .gauge_style(Style::default().fg(Color::Cyan).bg(Color::Black))
+            .gauge_style(Style::default().fg(COLOR_SECONDARY).bg(Color::Black))
             .ratio(elapsed);
         f.render_widget(progress, elapsed_layout[0]);
 
