@@ -111,10 +111,19 @@ trait ListView {
     }
 
     fn update_selection(&mut self) {
-        if !self.is_empty() && !self.is_selected() {
-            self.select(Some(0));
-        } else if self.is_empty() {
+        if self.is_empty() {
             self.select(None);
+            return;
+        }
+        match self.selected() {
+            None => {
+                self.select(Some(0));
+            }
+            Some(selected) => {
+                if selected > self.get_size().saturating_sub(1) {
+                    self.select(Some(0));
+                }
+            }
         }
     }
 }
