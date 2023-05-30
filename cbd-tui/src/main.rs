@@ -38,6 +38,8 @@ use tokio::{fs, select, signal, task};
 use tokio_stream::StreamExt;
 use tonic::{transport::Channel, Request, Status, Streaming};
 
+use notify_rust::Notification;
+
 const COLOR_PRIMARY: Color = Color::Rgb(129, 161, 193);
 // const COLOR_PRIMARY_DARK: Color = Color::Rgb(94, 129, 172);
 const COLOR_PRIMARY_DARK: Color = Color::Rgb(59, 66, 82);
@@ -193,6 +195,11 @@ impl QueueView {
             .collect();
 
         self.update_selection();
+        Notification::new()
+            .summary(&self.list[0].title)
+            .body(&self.list[0].title)
+            .show()
+            .unwrap();
     }
 }
 
