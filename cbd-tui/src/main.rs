@@ -52,6 +52,20 @@ trait ListView {
     fn select(&mut self, idx: Option<usize>);
     fn selected(&self) -> Option<usize>;
 
+    fn first(&mut self) {
+        if self.is_empty() {
+            return;
+        }
+        self.select(Some(0));
+    }
+
+    fn last(&mut self) {
+        if self.is_empty() {
+            return;
+        }
+        self.select(Some(self.get_size() - 1));
+    }
+
     fn next(&mut self) {
         if self.is_empty() {
             return;
@@ -521,6 +535,12 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         (_, KeyModifiers::CONTROL, KeyCode::Char('n')) => {
                             app.queue.skip(&tx);
                         }
+                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('g')) => {
+                            app.library.first();
+                        }
+                        (UiFocus::Library, KeyModifiers::SHIFT, KeyCode::Char('g')) => {
+                            app.library.last();
+                        }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('j')) => {
                             app.library.next();
                         }
@@ -541,6 +561,12 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Enter) => {
                             app.library.queue_replace_with_item(&tx);
+                        }
+                        (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('g')) => {
+                            app.queue.first();
+                        }
+                        (UiFocus::Queue, KeyModifiers::SHIFT, KeyCode::Char('g')) => {
+                            app.queue.last();
                         }
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('j')) => {
                             app.queue.next();
