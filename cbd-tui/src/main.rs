@@ -674,7 +674,12 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             } else {
                 i.title.to_string()
             };
-            ListItem::new(Span::from(title)).style(Style::default())
+            let style = if i.active {
+                Style::default().add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            ListItem::new(Span::from(title)).style(style)
         })
         .collect();
 
