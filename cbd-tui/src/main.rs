@@ -209,11 +209,6 @@ impl QueueView {
             .collect();
 
         self.update_selection();
-        Notification::new()
-            .summary(&self.list[0].title)
-            .body(&self.list[0].title)
-            .show()
-            .unwrap();
     }
 }
 
@@ -322,12 +317,28 @@ struct NowPlayingView {
 
 impl NowPlayingView {
     fn update(&mut self, active_track: ActiveTrack) {
-        self.track = active_track.track.clone();
         self.playing_state = active_track.play_state();
-        if let Some(track) = &self.track {
-            if let Some(duration) = track.duration {
+
+        if let Some(next_track) = active_track.track {
+            if let Some(duration) = next_track.duration {
                 self.completion = Some(active_track.completion);
                 self.elapsed = Some(active_track.completion as f64 / duration as f64);
+            }
+
+            let changed = if let Some(current_track) = &self.track {
+                current_track.uuid != next_track.uuid
+            } else {
+                true
+            };
+
+            if changed {
+                Notification::new()
+                    .summary("Crabidy playing")
+                    .body(&format!("{} by {}", next_track.title, next_track.artist))
+                    .show()
+                    .unwrap();
+
+                self.track = Some(next_track);
             }
         }
     }
