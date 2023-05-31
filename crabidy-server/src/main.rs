@@ -25,6 +25,28 @@ use std::{
 };
 use tonic::{transport::Server, Request, Response, Result, Status};
 
+fn poll_bus(bus: gstreamer::Bus, tx: flume::Sender<PlaybackMessage>) {
+    loop {
+        for msg in bus.iter_timed(gstreamer::ClockTime::NONE) {
+            match PlayMessage::parse(&msg) {
+                Ok(PlayMessage::EndOfStream) => {
+                    tx.send(PlaybackMessage::Next).unwrap();
+                }
+                Ok(PlayMessage::StateChanged { state }) => {
+                    tx.send(PlaybackMessage::StateChanged { state }).unwrap();
+                }
+                Ok(PlayMessage::PositionUpdated { position }) => {}
+                Ok(PlayMessage::Buffering { percent }) => {}
+                Ok(PlayMessage::VolumeChanged { volume }) => {}
+                Ok(PlayMessage::MuteChanged { muted }) => {}
+
+                Ok(PlayMessage::MediaInfoUpdated { info }) => {}
+                _ => println!("Unknown message: {:?}", msg),
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (queue_update_tx, _) = tokio::sync::broadcast::channel(100);
@@ -40,26 +62,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bus = playback.play.message_bus();
     let playback_tx = playback.playback_tx.clone();
 
-    bus.set_sync_handler(move |_, msg| {
-        match PlayMessage::parse(msg) {
-            Ok(PlayMessage::EndOfStream) => {
-                playback_tx.send(PlaybackMessage::Next).unwrap();
-            }
-            Ok(PlayMessage::StateChanged { state }) => {
-                playback_tx
-                    .send(PlaybackMessage::StateChanged { state })
-                    .unwrap();
-            }
-            Ok(PlayMessage::PositionUpdated { position }) => {}
-            Ok(PlayMessage::Buffering { percent }) => {}
-            Ok(PlayMessage::VolumeChanged { volume }) => {}
-            Ok(PlayMessage::MuteChanged { muted }) => {}
-
-            Ok(PlayMessage::MediaInfoUpdated { info }) => {}
-            _ => println!("Unknown message: {:?}", msg),
-        }
-        gstreamer::BusSyncReply::Drop
+    std::thread::spawn(|| {
+        poll_bus(bus, playback_tx);
     });
+
+    // bus.set_sync_handler(move |_, msg| {
+    //     match PlayMessage::parse(msg) {
+    //         Ok(PlayMessage::EndOfStream) => {
+    //             playback_tx.send(PlaybackMessage::Next).unwrap();
+    //         }
+    //         Ok(PlayMessage::StateChanged { state }) => {
+    //             playback_tx
+    //                 .send(PlaybackMessage::StateChanged { state })
+    //                 .unwrap();
+    //         }
+    //         Ok(PlayMessage::PositionUpdated { position }) => {}
+    //         Ok(PlayMessage::Buffering { percent }) => {}
+    //         Ok(PlayMessage::VolumeChanged { volume }) => {}
+    //         Ok(PlayMessage::MuteChanged { muted }) => {}
+    //
+    //         Ok(PlayMessage::MediaInfoUpdated { info }) => {}
+    //         _ => println!("Unknown message: {:?}", msg),
+    //     }
+    //     gstreamer::BusSyncReply::Drop
+    // });
     let crabidy_service = RpcService::new(
         queue_update_tx,
         active_track_tx,
@@ -520,6 +546,7 @@ impl Playback {
             let mut state_guard = self.state.lock().unwrap();
             *state_guard = PlayState::Playing;
         }
+        self.play.stop();
         self.play.set_uri(Some(&urls[0]));
         self.play.play();
     }
