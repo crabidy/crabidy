@@ -164,6 +164,8 @@ struct UiItem {
 }
 
 struct QueueView {
+    // FIXME: implement skip on server, remove current
+    current: usize,
     list: Vec<UiItem>,
     list_state: ListState,
 }
@@ -183,11 +185,10 @@ impl ListView for QueueView {
 }
 
 impl QueueView {
+    // FIXME: implement skip on server
     fn skip(&self, tx: &Sender<MessageFromUi>) {
-        if let Some(pos) = self.selected() {
-            if pos < self.get_size() - 1 {
-                tx.send(MessageFromUi::SetCurrentTrack(pos + 1));
-            }
+        if self.current < self.get_size() - 1 {
+            tx.send(MessageFromUi::SetCurrentTrack(self.current + 1));
         }
     }
     fn play_selected(&self, tx: &Sender<MessageFromUi>) {
@@ -196,6 +197,8 @@ impl QueueView {
         }
     }
     fn update(&mut self, queue: Queue) {
+        // FIXME: rename current to current_pos in proto buf definition
+        self.current = queue.current as usize;
         self.list = queue
             .tracks
             .iter()
@@ -362,6 +365,7 @@ impl App {
             parent: None,
         };
         let queue = QueueView {
+            current: 0,
             list: Vec::new(),
             list_state: ListState::default(),
         };
@@ -695,15 +699,11 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                 }))
                 .title("Queue"),
         )
-        .highlight_style(
-            Style::default()
-                .bg(if queue_focused {
-                    COLOR_PRIMARY
-                } else {
-                    COLOR_PRIMARY_DARK
-                })
-                .add_modifier(Modifier::BOLD),
-        );
+        .highlight_style(Style::default().bg(if queue_focused {
+            COLOR_PRIMARY
+        } else {
+            COLOR_PRIMARY_DARK
+        }));
 
     f.render_stateful_widget(queue_list, right_side[0], &mut app.queue.list_state);
 
