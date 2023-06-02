@@ -128,7 +128,7 @@ message LibraryNodeChild {
 
 message Queue {
   uint64 timestamp = 1;
-  uint32 current = 2;
+  uint32 current_position = 2;
   // Without album
   repeated Track tracks = 3;
 }

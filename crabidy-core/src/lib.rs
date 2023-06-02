@@ -56,25 +56,25 @@ pub enum QueueError {
 
 impl Queue {
     pub fn current(&mut self) -> Option<Track> {
-        if self.current < self.tracks.len() as u32 {
-            Some(self.tracks[self.current as usize].clone())
+        if self.current_position < self.tracks.len() as u32 {
+            Some(self.tracks[self.current_position as usize].clone())
         } else {
             None
         }
     }
 
-    pub fn next(&mut self) -> Option<Track> {
-        if self.current < self.tracks.len() as u32 {
-            self.current += 1;
-            Some(self.tracks[self.current as usize].clone())
+    pub fn next_track(&mut self) -> Option<Track> {
+        if self.current_position < self.tracks.len() as u32 {
+            self.current_position += 1;
+            Some(self.tracks[self.current_position as usize].clone())
         } else {
             None
         }
     }
 
-    pub fn set_current(&mut self, current: u32) -> bool {
-        if current < self.tracks.len() as u32 {
-            self.current = current;
+    pub fn set_current_position(&mut self, current_position: u32) -> bool {
+        if current_position < self.tracks.len() as u32 {
+            self.current_position = current_position;
             true
         } else {
             false
@@ -82,7 +82,7 @@ impl Queue {
     }
 
     pub fn replace_with_tracks(&mut self, tracks: &[Track]) {
-        self.current = 0;
+        self.current_position = 0;
         self.tracks = tracks.to_vec();
     }
 
@@ -93,7 +93,7 @@ impl Queue {
     pub fn queue_tracks(&mut self, tracks: &[Track]) {
         let tail: Vec<Track> = self
             .tracks
-            .splice((self.current as usize).., tracks.to_vec())
+            .splice((self.current_position as usize).., tracks.to_vec())
             .collect();
         self.tracks.extend(tail);
     }
