@@ -1,8 +1,10 @@
 use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient, get_update_stream_response::Update,
-    GetLibraryNodeRequest, GetLibraryNodeResponse, GetUpdateStreamRequest, GetUpdateStreamResponse,
-    LibraryNode, ReplaceRequest, SetCurrentRequest, SetCurrentResponse, TogglePlayRequest,
-    TogglePlayResponse, InitRequest, InitResponse,
+    AppendRequest, ChangeVolumeRequest, GetLibraryNodeRequest, GetLibraryNodeResponse,
+    GetUpdateStreamRequest, GetUpdateStreamResponse, InitRequest, InitResponse, InsertRequest,
+    LibraryNode, NextRequest, PrevRequest, QueueRequest, RemoveRequest, ReplaceRequest,
+    RestartTrackRequest, SetCurrentRequest, SetCurrentResponse, ToggleMuteRequest,
+    TogglePlayRequest, TogglePlayResponse,
 };
 
 use std::{
@@ -87,40 +89,77 @@ impl RpcClient {
         if self.library_node_cache.contains_key(uuid) {
             return Ok(self.library_node_cache.get(uuid));
         }
-
         let get_library_node_request = Request::new(GetLibraryNodeRequest {
             uuid: uuid.to_string(),
         });
-
         let response = self
             .client
             .get_library_node(get_library_node_request)
             .await?;
-
         if let Some(library_node) = response.into_inner().node {
             self.library_node_cache
                 .insert(uuid.to_string(), library_node);
             return Ok(self.library_node_cache.get(uuid));
         }
-
         Err(Box::new(RpcClientError::NotFound))
+    }
+
+    pub async fn append_track(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
+        let append_request = Request::new(AppendRequest {
+            uuid: vec![uuid.to_string()],
+        });
+        self.client.append(append_request).await?;
+        Ok(())
+    }
+
+    pub async fn queue_track(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
+        let queue_request = Request::new(QueueRequest {
+            uuid: vec![uuid.to_string()],
+        });
+        self.client.queue(queue_request).await?;
+        Ok(())
+    }
+
+    pub async fn insert_track(&mut self, uuid: &str, pos: usize) -> Result<(), Box<dyn Error>> {
+        let insert_request = Request::new(InsertRequest {
+            uuid: vec![uuid.to_string()],
+            position: pos as u32,
+        });
+        self.client.insert(insert_request).await?;
+        Ok(())
+    }
+
+    pub async fn remove_track(&mut self, pos: usize) -> Result<(), Box<dyn Error>> {
+        let remove_request = Request::new(RemoveRequest {
+            positions: vec![pos as u32],
+        });
+        self.client.remove(remove_request).await?;
+        Ok(())
     }
 
     pub async fn replace_queue(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
         let replace_request = Request::new(ReplaceRequest {
             uuid: vec![uuid.to_string()],
         });
-
-        let response = self.client.replace(replace_request).await?;
-
+        self.client.replace(replace_request).await?;
         Ok(())
     }
 
-    pub async fn toggle_play(&mut self) -> Result<(), Box<dyn Error>> {
-        let toggle_play_request = Request::new(TogglePlayRequest {});
+    pub async fn next_track(&mut self) -> Result<(), Box<dyn Error>> {
+        let next_request = Request::new(NextRequest {});
+        self.client.next(next_request).await?;
+        Ok(())
+    }
 
-        let response = self.client.toggle_play(toggle_play_request).await?;
+    pub async fn prev_track(&mut self) -> Result<(), Box<dyn Error>> {
+        let prev_request = Request::new(PrevRequest {});
+        self.client.prev(prev_request).await?;
+        Ok(())
+    }
 
+    pub async fn restart_track(&mut self) -> Result<(), Box<dyn Error>> {
+        let restart_track_request = Request::new(RestartTrackRequest {});
+        self.client.restart_track(restart_track_request).await?;
         Ok(())
     }
 
@@ -128,9 +167,25 @@ impl RpcClient {
         let set_current_request = Request::new(SetCurrentRequest {
             position: pos as u32,
         });
+        self.client.set_current(set_current_request).await?;
+        Ok(())
+    }
 
-        let response = self.client.set_current(set_current_request).await?;
+    pub async fn toggle_play(&mut self) -> Result<(), Box<dyn Error>> {
+        let toggle_play_request = Request::new(TogglePlayRequest {});
+        self.client.toggle_play(toggle_play_request).await?;
+        Ok(())
+    }
 
+    pub async fn change_volume(&mut self, delta: f32) -> Result<(), Box<dyn Error>> {
+        let change_volume_request = Request::new(ChangeVolumeRequest { delta });
+        self.client.change_volume(change_volume_request).await?;
+        Ok(())
+    }
+
+    pub async fn toggle_mute(&mut self) -> Result<(), Box<dyn Error>> {
+        let toggle_mute_request = Request::new(ToggleMuteRequest {});
+        self.client.toggle_mute(toggle_mute_request).await?;
         Ok(())
     }
 }

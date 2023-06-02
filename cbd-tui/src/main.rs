@@ -163,10 +163,10 @@ struct UiItem {
 }
 
 struct QueueView {
-    // FIXME: implement skip on server, remove current
     current_position: usize,
     list: Vec<UiItem>,
     list_state: ListState,
+    tx: Sender<MessageFromUi>,
 }
 
 impl ListView for QueueView {
@@ -184,14 +184,27 @@ impl ListView for QueueView {
 }
 
 impl QueueView {
-    fn skip(&self, tx: &Sender<MessageFromUi>) {
+    fn play_next(&self) {
         if self.current_position < self.get_size() - 1 {
-            tx.send(MessageFromUi::Next);
+            self.tx.send(MessageFromUi::NextTrack);
         }
     }
-    fn play_selected(&self, tx: &Sender<MessageFromUi>) {
+    fn play_prev(&self) {
+        if self.current_position > 0 {
+            self.tx.send(MessageFromUi::PrevTrack);
+        }
+    }
+    fn play_selected(&self) {
         if let Some(pos) = self.selected() {
-            tx.send(MessageFromUi::SetCurrentTrack(pos));
+            self.tx.send(MessageFromUi::SetCurrentTrack(pos));
+        }
+    }
+    fn insert_track(&mut self) {
+        todo!();
+    }
+    fn remove_track(&mut self) {
+        if let Some(pos) = self.selected() {
+            self.tx.send(MessageFromUi::RemoveTrack(pos));
         }
     }
     fn update_position(&mut self, pos: usize) {
@@ -221,6 +234,7 @@ struct LibraryView {
     list_state: ListState,
     parent: Option<String>,
     positions: HashMap<String, usize>,
+    tx: Sender<MessageFromUi>,
 }
 
 impl ListView for LibraryView {
@@ -250,21 +264,32 @@ impl LibraryView {
         }
         None
     }
-    fn ascend(&mut self, tx: &Sender<MessageFromUi>) {
+    fn ascend(&mut self) {
         if let Some(parent) = self.parent.as_ref() {
-            tx.send(MessageFromUi::GetLibraryNode(parent.clone()));
+            self.tx.send(MessageFromUi::GetLibraryNode(parent.clone()));
         }
     }
-    fn dive(&mut self, tx: &Sender<MessageFromUi>) {
+    fn dive(&mut self) {
         if let Some(item) = self.get_selected() {
             if let UiItemKind::Node = item.kind {
-                tx.send(MessageFromUi::GetLibraryNode(item.uuid.clone()));
+                self.tx
+                    .send(MessageFromUi::GetLibraryNode(item.uuid.clone()));
             }
         }
     }
-    fn queue_replace_with_item(&mut self, tx: &Sender<MessageFromUi>) {
+    fn queue_append(&mut self) {
         if let Some(item) = self.get_selected() {
-            tx.send(MessageFromUi::ReplaceQueue(item.uuid.clone()));
+            self.tx.send(MessageFromUi::AppendTrack(item.uuid.clone()));
+        }
+    }
+    fn queue_queue(&mut self) {
+        if let Some(item) = self.get_selected() {
+            self.tx.send(MessageFromUi::QueueTrack(item.uuid.clone()));
+        }
+    }
+    fn queue_replace(&mut self) {
+        if let Some(item) = self.get_selected() {
+            self.tx.send(MessageFromUi::ReplaceQueue(item.uuid.clone()));
         }
     }
     fn prev_selected(&self) -> usize {
@@ -341,7 +366,7 @@ struct App {
 }
 
 impl App {
-    fn new() -> App {
+    fn new(tx: Sender<MessageFromUi>) -> App {
         let mut library = LibraryView {
             title: "Library".to_string(),
             uuid: "node:/".to_string(),
@@ -349,11 +374,13 @@ impl App {
             list_state: ListState::default(),
             positions: HashMap::new(),
             parent: None,
+            tx: tx.clone(),
         };
         let queue = QueueView {
             current_position: 0,
             list: Vec::new(),
             list_state: ListState::default(),
+            tx,
         };
         let now_playing = NowPlayingView {
             completion: None,
@@ -388,10 +415,18 @@ enum MessageToUi {
 // FIXME: Rename this
 enum MessageFromUi {
     GetLibraryNode(String),
-    Next,
+    AppendTrack(String),
+    QueueTrack(String),
+    InsertTrack(String, usize),
+    RemoveTrack(usize),
     ReplaceQueue(String),
+    NextTrack,
+    PrevTrack,
+    RestartTrack,
     SetCurrentTrack(usize),
     TogglePlay,
+    ChangeVolume(f32),
+    ToggleMute,
 }
 
 async fn poll(
@@ -407,19 +442,42 @@ async fn poll(
                         tx.send(MessageToUi::ReplaceLibraryNode(node.clone()));
                     }
                 },
+                MessageFromUi::AppendTrack(uuid) => {
+                    rpc_client.append_track(&uuid).await?
+                }
+                MessageFromUi::QueueTrack(uuid) => {
+                    rpc_client.queue_track(&uuid).await?
+                }
+                MessageFromUi::InsertTrack(uuid, pos) => {
+                    rpc_client.insert_track(&uuid, pos).await?
+                }
+                MessageFromUi::RemoveTrack(pos) => {
+                    rpc_client.remove_track(pos).await?
+                }
                 MessageFromUi::ReplaceQueue(uuid) => {
                     rpc_client.replace_queue(&uuid).await?
                 }
-                MessageFromUi::TogglePlay => {
-                    rpc_client.toggle_play().await?
+                MessageFromUi::NextTrack => {
+                    rpc_client.next_track().await?
+                }
+                MessageFromUi::PrevTrack => {
+                    rpc_client.prev_track().await?
+                }
+                MessageFromUi::RestartTrack => {
+                    rpc_client.restart_track().await?
                 }
                 MessageFromUi::SetCurrentTrack(pos) => {
                     rpc_client.set_current_track(pos).await?
                 }
-                MessageFromUi::Next => {
-                    // FIXME:
+                MessageFromUi::TogglePlay => {
+                    rpc_client.toggle_play().await?
                 }
-
+                MessageFromUi::ChangeVolume(delta) => {
+                    rpc_client.change_volume(delta).await?
+                }
+                MessageFromUi::ToggleMute => {
+                    rpc_client.toggle_mute().await?
+                }
             }
         }
         Some(resp) = rpc_client.update_stream.next() => {
@@ -482,7 +540,7 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
     let mut terminal = Terminal::new(backend).unwrap();
 
     // create app and run it
-    let mut app = App::new();
+    let mut app = App::new(tx.clone());
     let tick_rate = Duration::from_millis(100);
     let mut last_tick = Instant::now();
 
@@ -540,8 +598,23 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         (_, KeyModifiers::NONE, KeyCode::Char(' ')) => {
                             tx.send(MessageFromUi::TogglePlay);
                         }
+                        (_, KeyModifiers::NONE, KeyCode::Char('p')) => {
+                            tx.send(MessageFromUi::RestartTrack);
+                        }
+                        (_, KeyModifiers::SHIFT, KeyCode::Char('j')) => {
+                            tx.send(MessageFromUi::ChangeVolume(-0.1));
+                        }
+                        (_, KeyModifiers::SHIFT, KeyCode::Char('k')) => {
+                            tx.send(MessageFromUi::ChangeVolume(0.1));
+                        }
+                        (_, KeyModifiers::NONE, KeyCode::Char('m')) => {
+                            tx.send(MessageFromUi::ToggleMute);
+                        }
                         (_, KeyModifiers::CONTROL, KeyCode::Char('n')) => {
-                            app.queue.skip(&tx);
+                            app.queue.play_next();
+                        }
+                        (_, KeyModifiers::CONTROL, KeyCode::Char('p')) => {
+                            app.queue.play_prev();
                         }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('g')) => {
                             app.library.first();
@@ -562,13 +635,19 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                             app.library.up();
                         }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('h')) => {
-                            app.library.ascend(&tx);
+                            app.library.ascend();
                         }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('l')) => {
-                            app.library.dive(&tx);
+                            app.library.dive();
+                        }
+                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('n')) => {
+                            app.library.queue_queue();
+                        }
+                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('a')) => {
+                            app.library.queue_append();
                         }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Enter) => {
-                            app.library.queue_replace_with_item(&tx);
+                            app.library.queue_replace();
                         }
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('g')) => {
                             app.queue.first();
@@ -589,7 +668,10 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                             app.queue.up();
                         }
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Enter) => {
-                            app.queue.play_selected(&tx);
+                            app.queue.play_selected();
+                        }
+                        (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('d')) => {
+                            app.queue.remove_track();
                         }
                         _ => {}
                     }
