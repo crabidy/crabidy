@@ -1,9 +1,9 @@
 mod rpc;
 
 use crabidy_core::proto::crabidy::{
-    crabidy_service_client::CrabidyServiceClient, get_queue_updates_response::QueueUpdateResult,
-    ActiveTrack, GetLibraryNodeRequest, GetQueueUpdatesRequest, GetQueueUpdatesResponse,
-    GetTrackUpdatesResponse, LibraryNode, LibraryNodeState, Queue, Track, TrackPlayState,
+    crabidy_service_client::CrabidyServiceClient,
+    get_update_stream_response::Update as StreamUpdate, GetLibraryNodeRequest, LibraryNode,
+    PlayState, Queue, QueueTrack, Track, TrackPosition,
 };
 
 use crossterm::{
@@ -165,7 +165,7 @@ struct UiItem {
 
 struct QueueView {
     // FIXME: implement skip on server, remove current
-    current: usize,
+    current_position: usize,
     list: Vec<UiItem>,
     list_state: ListState,
 }
@@ -187,8 +187,8 @@ impl ListView for QueueView {
 impl QueueView {
     // FIXME: implement skip on server
     fn skip(&self, tx: &Sender<MessageFromUi>) {
-        if self.current < self.get_size() - 1 {
-            tx.send(MessageFromUi::SetCurrentTrack(self.current + 1));
+        if self.current_position < self.get_size() - 1 {
+            tx.send(MessageFromUi::SetCurrentTrack(self.current_position + 1));
         }
     }
     fn play_selected(&self, tx: &Sender<MessageFromUi>) {
@@ -196,9 +196,11 @@ impl QueueView {
             tx.send(MessageFromUi::SetCurrentTrack(pos));
         }
     }
+    fn update_position(&mut self, pos: usize) {
+        self.current_position = pos;
+    }
     fn update(&mut self, queue: Queue) {
-        // FIXME: rename current to current_pos in proto buf definition
-        self.current = queue.current as usize;
+        self.current_position = queue.current_position as usize;
         self.list = queue
             .tracks
             .iter()
@@ -207,7 +209,7 @@ impl QueueView {
                 uuid: t.uuid.clone(),
                 title: format!("{} - {}", t.artist, t.title),
                 kind: UiItemKind::Track,
-                active: i == queue.current as usize,
+                active: i == queue.current_position as usize,
             })
             .collect();
 
@@ -265,7 +267,7 @@ impl LibraryView {
     }
     fn queue_replace_with_item(&mut self, tx: &Sender<MessageFromUi>) {
         if let Some(item) = self.get_selected() {
-            tx.send(MessageFromUi::ReplaceWithItem(item.uuid.clone(), item.kind));
+            tx.send(MessageFromUi::ReplaceQueue(item.uuid.clone()));
         }
     }
     fn prev_selected(&self) -> usize {
@@ -314,36 +316,25 @@ impl LibraryView {
 struct NowPlayingView {
     completion: Option<u32>,
     elapsed: Option<f64>,
-    playing_state: TrackPlayState,
+    play_state: PlayState,
     track: Option<Track>,
 }
 
 impl NowPlayingView {
-    fn update(&mut self, active_track: ActiveTrack) {
-        self.playing_state = active_track.play_state();
-
-        if let Some(next_track) = active_track.track {
-            if let Some(duration) = next_track.duration {
-                self.completion = Some(active_track.completion);
-                self.elapsed = Some(active_track.completion as f64 / duration as f64);
-            }
-
-            let changed = if let Some(current_track) = &self.track {
-                current_track.uuid != next_track.uuid
-            } else {
-                true
-            };
-
-            if changed {
-                Notification::new()
-                    .summary("Crabidy playing")
-                    .body(&format!("{} by {}", next_track.title, next_track.artist))
-                    .show()
-                    .unwrap();
-
-                self.track = Some(next_track);
-            }
+    fn update_play_state(&mut self, play_state: PlayState) {
+        self.play_state = play_state;
+    }
+    fn update_position(&mut self, pos: TrackPosition) {}
+    fn update_track(&mut self, active: Option<Track>) {
+        if let Some(track) = &active {
+            Notification::new()
+                .summary("Crabidy playing")
+                // FIXME: album
+                .body(&format!("{} by {}", track.title, track.artist))
+                .show()
+                .unwrap();
         }
+        self.track = active;
     }
 }
 
@@ -365,14 +356,14 @@ impl App {
             parent: None,
         };
         let queue = QueueView {
-            current: 0,
+            current_position: 0,
             list: Vec::new(),
             list_state: ListState::default(),
         };
         let now_playing = NowPlayingView {
             completion: None,
             elapsed: None,
-            playing_state: TrackPlayState::Unspecified,
+            play_state: PlayState::Unspecified,
             track: None,
         };
         App {
@@ -395,14 +386,13 @@ impl App {
 // FIXME: Rename this
 enum MessageToUi {
     ReplaceLibraryNode(LibraryNode),
-    QueueStreamUpdate(QueueUpdateResult),
-    TrackStreamUpdate(ActiveTrack),
+    Update(StreamUpdate),
 }
 
 // FIXME: Rename this
 enum MessageFromUi {
     GetLibraryNode(String),
-    ReplaceWithItem(String, UiItemKind),
+    ReplaceQueue(String),
     SetCurrentTrack(usize),
     TogglePlay,
 }
@@ -420,15 +410,8 @@ async fn poll(
                         tx.send(MessageToUi::ReplaceLibraryNode(node.clone()));
                     }
                 },
-                MessageFromUi::ReplaceWithItem(uuid, kind) => {
-                    match kind {
-                        UiItemKind::Node => {
-                            rpc_client.replace_queue_with_node(&uuid).await?
-                        }
-                        UiItemKind::Track => {
-                            rpc_client.replace_queue_with_track(&uuid).await?
-                        }
-                    }
+                MessageFromUi::ReplaceQueue(uuid) => {
+                    rpc_client.replace_queue(&uuid).await?
                 }
                 MessageFromUi::TogglePlay => {
                     rpc_client.toggle_play().await?
@@ -439,29 +422,17 @@ async fn poll(
 
             }
         }
-        Some(resp) = rpc_client.queue_updates_stream.next() => {
+        Some(resp) = rpc_client.update_stream.next() => {
             match resp {
                 Ok(resp) => {
-                    if let Some(res) = resp.queue_update_result {
-                        tx.send_async(MessageToUi::QueueStreamUpdate(res)).await?;
+                    if let Some(update) = resp.update {
+                        tx.send_async(MessageToUi::Update(update)).await?;
                     }
                 }
                 Err(_) => {
-                    rpc_client.reconnect_queue_updates_stream().await;
+                    rpc_client.reconnect_update_stream().await;
                 }
 
-            }
-        }
-        Some(resp) = rpc_client.track_updates_stream.next() => {
-            match resp {
-                Ok(resp) => {
-                    if let Some(active_track) = resp.active_track {
-                        tx.send_async(MessageToUi::TrackStreamUpdate(active_track)).await?;
-                    }
-                }
-                Err(_) => {
-                    rpc_client.reconnect_track_updates_stream().await;
-                }
             }
         }
     }
@@ -518,15 +489,22 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                 MessageToUi::ReplaceLibraryNode(node) => {
                     app.library.update(node);
                 }
-                MessageToUi::QueueStreamUpdate(queue_update) => match queue_update {
-                    QueueUpdateResult::Full(queue) => {
+                MessageToUi::Update(update) => match update {
+                    StreamUpdate::Queue(queue) => {
                         app.queue.update(queue);
                     }
-                    QueueUpdateResult::PositionChange(pos) => {}
+                    StreamUpdate::QueueTrack(track) => {
+                        app.now_playing.update_track(track.track);
+                        app.queue.update_position(track.queue_position as usize);
+                    }
+                    StreamUpdate::Position(pos) => app.now_playing.update_position(pos),
+                    StreamUpdate::PlayState(play_state) => {
+                        if let Some(ps) = PlayState::from_i32(play_state) {
+                            app.now_playing.update_play_state(ps);
+                        }
+                    }
+                    _ => {}
                 },
-                MessageToUi::TrackStreamUpdate(active_track) => {
-                    app.now_playing.update(active_track);
-                }
             }
         }
 
@@ -713,10 +691,10 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .split(right_side[1]);
 
     let media_info_text = if let Some(track) = &app.now_playing.track {
-        let play_text = match &app.now_playing.playing_state {
-            TrackPlayState::Loading => "▼",
-            TrackPlayState::Paused => "■",
-            TrackPlayState::Playing => "♫",
+        let play_text = match &app.now_playing.play_state {
+            PlayState::Loading => "▼",
+            PlayState::Paused => "■",
+            PlayState::Playing => "♫",
             _ => "",
         };
         vec![

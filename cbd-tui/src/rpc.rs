@@ -1,9 +1,8 @@
 use crabidy_core::proto::crabidy::{
-    crabidy_service_client::CrabidyServiceClient, get_queue_updates_response::QueueUpdateResult,
-    GetLibraryNodeRequest, GetQueueUpdatesRequest, GetQueueUpdatesResponse, GetTrackUpdatesRequest,
-    GetTrackUpdatesResponse, LibraryNode, LibraryNodeState, ReplaceWithNodeRequest,
-    ReplaceWithNodeResponse, ReplaceWithTrackRequest, ReplaceWithTrackResponse,
-    SetCurrentTrackRequest, SetCurrentTrackResponse, TogglePlayRequest,
+    crabidy_service_client::CrabidyServiceClient, get_update_stream_response::Update,
+    GetLibraryNodeRequest, GetLibraryNodeResponse, GetUpdateStreamRequest, GetUpdateStreamResponse,
+    LibraryNode, ReplaceRequest, SetCurrentRequest, SetCurrentResponse, TogglePlayRequest,
+    TogglePlayResponse,
 };
 
 use std::{
@@ -38,8 +37,7 @@ impl Error for RpcClientError {}
 pub struct RpcClient {
     library_node_cache: HashMap<String, LibraryNode>,
     client: CrabidyServiceClient<Channel>,
-    pub queue_updates_stream: Streaming<GetQueueUpdatesResponse>,
-    pub track_updates_stream: Streaming<GetTrackUpdatesResponse>,
+    pub update_stream: Streaming<GetUpdateStreamResponse>,
 }
 
 impl RpcClient {
@@ -47,24 +45,22 @@ impl RpcClient {
         let endpoint = Endpoint::from_static(addr).connect_lazy();
         let mut client = CrabidyServiceClient::new(endpoint);
 
-        let queue_updates_stream = Self::get_queue_updates_stream(&mut client).await;
-        let track_updates_stream = Self::get_track_updates_stream(&mut client).await;
+        let update_stream = Self::get_update_stream(&mut client).await;
         let library_node_cache: HashMap<String, LibraryNode> = HashMap::new();
 
         Ok(RpcClient {
             client,
             library_node_cache,
-            track_updates_stream,
-            queue_updates_stream,
+            update_stream,
         })
     }
 
-    async fn get_queue_updates_stream(
+    async fn get_update_stream(
         client: &mut CrabidyServiceClient<Channel>,
-    ) -> Streaming<GetQueueUpdatesResponse> {
+    ) -> Streaming<GetUpdateStreamResponse> {
         loop {
-            let get_queue_updates_request = Request::new(GetQueueUpdatesRequest { timestamp: 0 });
-            if let Ok(resp) = client.get_queue_updates(get_queue_updates_request).await {
+            let get_update_stream_request = Request::new(GetUpdateStreamRequest {});
+            if let Ok(resp) = client.get_update_stream(get_update_stream_request).await {
                 return resp.into_inner();
             } else {
                 tokio::time::sleep(Duration::from_secs(2)).await;
@@ -72,31 +68,10 @@ impl RpcClient {
         }
     }
 
-    async fn get_track_updates_stream(
-        client: &mut CrabidyServiceClient<Channel>,
-    ) -> Streaming<GetTrackUpdatesResponse> {
-        loop {
-            let get_track_updates_request = Request::new(GetTrackUpdatesRequest {
-                type_whitelist: Vec::new(),
-                type_blacklist: Vec::new(),
-                updates_skipped: 0,
-            });
-            if let Ok(resp) = client.get_track_updates(get_track_updates_request).await {
-                return resp.into_inner();
-            } else {
-                tokio::time::sleep(Duration::from_secs(2)).await;
-            }
-        }
-    }
-
-    pub async fn reconnect_queue_updates_stream(&mut self) {
-        let queue_updates_stream = Self::get_queue_updates_stream(&mut self.client).await;
-        mem::replace(&mut self.queue_updates_stream, queue_updates_stream);
-    }
-
-    pub async fn reconnect_track_updates_stream(&mut self) {
-        let track_updates_stream = Self::get_track_updates_stream(&mut self.client).await;
-        mem::replace(&mut self.track_updates_stream, track_updates_stream);
+    pub async fn reconnect_update_stream(&mut self) {
+        let update_stream = Self::get_update_stream(&mut self.client).await;
+        // FIXME: apparently mem::replace doesn't do anything here
+        mem::replace(&mut self.update_stream, update_stream);
     }
 
     pub async fn get_library_node(
@@ -125,28 +100,12 @@ impl RpcClient {
         Err(Box::new(RpcClientError::NotFound))
     }
 
-    pub async fn replace_queue_with_node(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
-        let replace_with_node_request = Request::new(ReplaceWithNodeRequest {
-            uuid: uuid.to_string(),
+    pub async fn replace_queue(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
+        let replace_request = Request::new(ReplaceRequest {
+            uuid: vec![uuid.to_string()],
         });
 
-        let response = self
-            .client
-            .replace_with_node(replace_with_node_request)
-            .await?;
-
-        Ok(())
-    }
-
-    pub async fn replace_queue_with_track(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
-        let replace_with_track_request = Request::new(ReplaceWithTrackRequest {
-            uuid: uuid.to_string(),
-        });
-
-        let response = self
-            .client
-            .replace_with_track(replace_with_track_request)
-            .await?;
+        let response = self.client.replace(replace_request).await?;
 
         Ok(())
     }
@@ -160,14 +119,11 @@ impl RpcClient {
     }
 
     pub async fn set_current_track(&mut self, pos: usize) -> Result<(), Box<dyn Error>> {
-        let set_current_track_request = Request::new(SetCurrentTrackRequest {
+        let set_current_request = Request::new(SetCurrentRequest {
             position: pos as u32,
         });
 
-        let response = self
-            .client
-            .set_current_track(set_current_track_request)
-            .await?;
+        let response = self.client.set_current(set_current_request).await?;
 
         Ok(())
     }
