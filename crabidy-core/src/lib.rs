@@ -17,6 +17,7 @@ pub trait ProviderClient: std::fmt::Debug + Send + Sync {
 
 #[derive(Clone, Debug, Hash)]
 pub enum ProviderError {
+    Config(String),
     UnknownUser,
     CouldNotLogin,
     FetchError,

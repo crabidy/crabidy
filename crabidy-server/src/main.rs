@@ -19,6 +19,7 @@ use tokio_stream::StreamExt;
 
 use std::{
     fs,
+    path::PathBuf,
     pin::Pin,
     sync::{Arc, Mutex},
 };
@@ -149,10 +150,24 @@ impl ProviderOrchestrator {
 #[async_trait]
 impl ProviderClient for ProviderOrchestrator {
     async fn init(_s: &str) -> Result<Self, ProviderError> {
-        let raw_toml_settings = fs::read_to_string("/tmp/tidaldy.toml").unwrap_or("".to_owned());
+        let config_dir = dirs::config_dir()
+            .map(|d| d.join("crabidy"))
+            .unwrap_or(PathBuf::from("/tmp"));
+        let dir_exists = tokio::fs::try_exists(&config_dir)
+            .await
+            .map_err(|e| ProviderError::Config(e.to_string()))?;
+        if !dir_exists {
+            tokio::fs::create_dir(&config_dir)
+                .await
+                .map_err(|e| ProviderError::Config(e.to_string()))?;
+        }
+        let config_file = config_dir.join("tidaly.toml");
+        let raw_toml_settings = fs::read_to_string(&config_file).unwrap_or("".to_owned());
         let tidal_client = Arc::new(tidaldy::Client::init(&raw_toml_settings).await.unwrap());
         let new_toml_config = tidal_client.settings();
-        fs::write("/tmp/tidaldy.toml", new_toml_config).unwrap();
+        tokio::fs::write(&config_file, new_toml_config)
+            .await
+            .map_err(|e| ProviderError::Config(e.to_string()));
         let (provider_tx, provider_rx) = flume::bounded(100);
         Ok(Self {
             provider_rx,
@@ -291,12 +306,12 @@ impl Playback {
                                 duration: self
                                     .play
                                     .duration()
-                                    .and_then(|t| Some(t.mseconds() as u32))
+                                    .map(|t| t.mseconds() as u32)
                                     .unwrap_or(0),
                                 position: self
                                     .play
                                     .position()
-                                    .and_then(|t| Some(t.mseconds() as u32))
+                                    .map(|t| t.mseconds() as u32)
                                     .unwrap_or(0),
                             };
                             let play_state = match *self.state.lock().unwrap() {
