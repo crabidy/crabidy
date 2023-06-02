@@ -55,7 +55,7 @@ pub enum QueueError {
 }
 
 impl Queue {
-    pub fn current(&mut self) -> Option<Track> {
+    pub fn current(&self) -> Option<Track> {
         if self.current_position < self.tracks.len() as u32 {
             Some(self.tracks[self.current_position as usize].clone())
         } else {

@@ -35,7 +35,7 @@ message InitResponse {
   Queue queue = 1;
   QueueTrack queue_track = 2;
   PlayState play_state = 3;
-  uint32 volume = 4;
+  float volume = 4;
   bool mute = 5;
   TrackPosition position = 6;
 }
@@ -92,7 +92,7 @@ message GetUpdateStreamResponse {
     Queue queue = 1;
     QueueTrack queue_track = 2;
     PlayState play_state = 3;
-    uint32 volume = 4;
+    float volume = 4;
     bool mute = 5;
     TrackPosition position = 6;
   }
