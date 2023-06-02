@@ -2,67 +2,159 @@ syntax = "proto3";
 package crabidy.v1;
 
 service CrabidyService {
+  // System
+  rpc Init(InitRequest) returns (InitResponse);
+
   // Library
   rpc GetLibraryNode(GetLibraryNodeRequest) returns (GetLibraryNodeResponse);
-  rpc GetTrack(GetTrackRequest) returns (GetTrackResponse);
 
   // Queue
-  rpc QueueTrack(QueueTrackRequest) returns (QueueTrackResponse);
-  rpc QueueLibraryNode(QueueLibraryNodeRequest) returns (QueueLibraryNodeResponse);
-  rpc ReplaceWithTrack(ReplaceWithTrackRequest) returns (ReplaceWithTrackResponse);
-  rpc ReplaceWithNode(ReplaceWithNodeRequest) returns (ReplaceWithNodeResponse);
-  rpc AppendTrack(AppendTrackRequest) returns (AppendTrackResponse);
-  rpc AppendNode(AppendNodeRequest) returns (AppendNodeResponse);
-  rpc RemoveTracks(RemoveTracksRequest) returns (RemoveTracksResponse);
-  rpc SetCurrentTrack(SetCurrentTrackRequest) returns (SetCurrentTrackResponse);
-  rpc GetQueueUpdates(GetQueueUpdatesRequest) returns (stream GetQueueUpdatesResponse);
-  rpc GetQueue(GetQueueRequest) returns (GetQueueResponse);
+  rpc Queue(QueueRequest) returns (QueueResponse);
+  rpc Replace(ReplaceRequest) returns (ReplaceResponse);
+  rpc Append(AppendRequest) returns (AppendResponse);
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+  rpc Insert(InsertRequest) returns (InsertResponse);
+  rpc SetCurrent(SetCurrentRequest) returns (SetCurrentResponse);
+  rpc GetUpdateStream(GetUpdateStreamRequest) returns (stream GetUpdateStreamResponse);
   rpc SaveQueue(SaveQueueRequest) returns (SaveQueueResponse);
 
   // Playback
   rpc TogglePlay(TogglePlayRequest) returns (TogglePlayResponse);
   rpc Stop(StopRequest) returns (StopResponse);
-  rpc GetActiveTrack(GetActiveTrackRequest) returns (GetActiveTrackResponse);
-  rpc GetTrackUpdates(GetTrackUpdatesRequest) returns (stream GetTrackUpdatesResponse);
+  rpc ChangeVolume(ChangeVolumeRequest) returns (ChangeVolumeResponse);
+  rpc ToggleMute(ToggleMuteRequest) returns (ToggleMuteResponse);
+  rpc Next(NextRequest) returns (NextResponse);
+  rpc Prev(PrevRequest) returns (PrevResponse);
+  rpc RestartTrack(RestartTrackRequest) returns (RestartTrackResponse);
 }
 
+// System
+message InitRequest {}
+message InitResponse {
+  Queue queue = 1;
+  QueueTrack queue_track = 2;
+  PlayState play_state = 3;
+  uint32 volume = 4;
+  bool mute = 5;
+  TrackPosition position = 6;
+}
+
+// Library
+message GetLibraryNodeRequest {
+  string uuid = 1;
+}
+message GetLibraryNodeResponse {
+  LibraryNode node = 1;
+}
+
+// Queue
+message QueueRequest {
+  repeated string uuid = 1;
+}
+message QueueResponse {}
+
+message ReplaceRequest {
+  repeated string uuid = 1;
+}
+message ReplaceResponse {}
+
+message AppendRequest {
+  repeated string uuid = 1;
+}
+message AppendResponse {}
+
+message RemoveRequest {
+  repeated string uuid = 1;
+}
+message RemoveResponse {}
+
+message InsertRequest {
+  repeated string uuid = 1;
+}
+message InsertResponse {}
+
+message SetCurrentRequest {
+  uint32 position = 1;
+}
+message SetCurrentResponse {}
+
+message SaveQueueRequest {
+  string name = 1;
+}
+message SaveQueueResponse {}
+
+// Stream
+message GetUpdateStreamRequest {}
+message GetUpdateStreamResponse {
+  oneof update {
+    Queue queue = 1;
+    QueueTrack queue_track = 2;
+    PlayState play_state = 3;
+    uint32 volume = 4;
+    bool mute = 5;
+    TrackPosition position = 6;
+  }
+}
+
+// Playback
+message TogglePlayRequest {}
+message TogglePlayResponse {}
+
+message StopRequest {}
+message StopResponse {}
+
+message ChangeVolumeRequest {
+  int32 delta = 1;
+}
+message ChangeVolumeResponse {}
+
+message ToggleMuteRequest {}
+message ToggleMuteResponse {}
+
+message NextRequest {}
+message NextResponse {}
+
+message PrevRequest {}
+message PrevResponse {}
+
+message RestartTrackRequest {}
+message RestartTrackResponse {}
+
+// Data types
 message LibraryNodeChild {
   string uuid = 1;
   string title = 2;
 }
 
-message GetQueueRequest {}
-message QueueTrackResponse {}
-message QueueLibraryNodeResponse {}
-message ReplaceWithTrackResponse {}
-message ReplaceWithNodeResponse {}
-message AppendTrackResponse {}
-message AppendNodeResponse {}
-message RemoveTracksResponse {}
-message SetCurrentTrackResponse {}
-message SaveQueueResponse {}
+message Queue {
+  uint64 timestamp = 1;
+  uint32 current = 2;
+  // Without album
+  repeated Track tracks = 3;
+}
 
-message TogglePlayRequest {}
-message TogglePlayResponse {}
-message StopRequest {}
-message StopResponse {}
-message GetActiveTrackRequest {}
+message QueueTrack {
+  uint32 queue_position = 1;
+  // With album
+  optional Track track = 2;
+}
 
-// To signal whether it's loading data (for frontend only probably -
-// could also be used for fetching from providers?)
-enum LibraryNodeState {
-  LIBRARY_NODE_STATE_UNSPECIFIED = 0;
-  LIBRARY_NODE_STATE_PENDING = 1;
-  LIBRARY_NODE_STATE_DONE = 2;
+enum PlayState {
+  PLAY_STATE_UNSPECIFIED = 0;
+  PLAY_STATE_STOPPED = 1;
+  PLAY_STATE_LOADING = 2;
+  PLAY_STATE_PLAYING = 3;
+  PLAY_STATE_PAUSED = 4;
+}
+
+message TrackPosition {
+  uint32 duration = 1;
+  uint32 position = 2;
 }
 
 message Album {
   string title = 1;
   optional string release_date = 2;
-}
-
-message Artist {
-  string name = 1;
 }
 
 message Track {
@@ -71,6 +163,7 @@ message Track {
   string artist = 2;
   string title = 3;
   optional uint32 duration = 4;
+  optional Album album = 5;
 }
 
 message LibraryNode {
@@ -79,117 +172,6 @@ message LibraryNode {
   string title = 2;
   repeated LibraryNodeChild children = 3;
   optional string parent = 4;
-  LibraryNodeState state = 5;
-  repeated Track tracks = 6;
-  bool is_queable = 7;
-}
-
-message GetLibraryNodeRequest {
-  string uuid = 1;
-}
-
-message GetLibraryNodeResponse {
-  LibraryNode node = 1;
-}
-
-message GetTrackRequest {
-  string uuid = 1;
-}
-
-message GetTrackResponse {
-  Track track = 1;
-}
-
-message Queue {
-  uint64 timestamp = 1;
-  uint32 current = 2;
-  repeated Track tracks = 3;
-}
-
-message QueuePositionChange {
-  uint64 timestamp = 1;
-  uint32 new_position = 2;
-}
-
-message QueueTrackRequest {
-  string uuid = 1;
-}
-
-message ReplaceWithTrackRequest {
-  string uuid = 1;
-}
-
-message AppendTrackRequest {
-  string uuid = 1;
-}
-
-message QueueLibraryNodeRequest {
-  string uuid = 1;
-}
-
-message ReplaceWithNodeRequest {
-  string uuid = 1;
-}
-
-message AppendNodeRequest {
-  string uuid = 1;
-}
-
-message RemoveTracksRequest {
-  repeated uint32 positions = 1;
-}
-
-message SetCurrentTrackRequest {
-  uint32 position = 1;
-}
-
-message GetQueueUpdatesRequest {
-  uint64 timestamp = 2;
-}
-
-message GetQueueResponse {
-  Queue queue = 1;
-}
-
-message GetQueueUpdatesResponse {
-  oneof queue_update_result {
-    Queue full = 1;
-    QueuePositionChange position_change = 2;
-  }
-}
-
-message SaveQueueRequest {
-  string name = 1;
-  // inside the configured path of crabidy
-  string path = 2;
-}
-
-enum TrackPlayState {
-  TRACK_PLAY_STATE_UNSPECIFIED = 0;
-  TRACK_PLAY_STATE_STOPPED = 1;
-  TRACK_PLAY_STATE_LOADING = 2;
-  TRACK_PLAY_STATE_PLAYING = 3;
-  TRACK_PLAY_STATE_PAUSED = 4;
-}
-
-message GetTrackUpdatesRequest {
-  // defines how many of the update messages should be skipped
-  // before they are sent back via GetTrackUpdates
-  uint32 updates_skipped = 1;
-  repeated string type_whitelist = 2;
-  repeated string type_blacklist = 3;
-}
-
-message ActiveTrack {
-  optional Track track = 1;
-  TrackPlayState play_state = 2;
-  uint32 completion = 3;
-}
-
-message GetActiveTrackResponse {
-  ActiveTrack active_track = 1;
-}
-
-message GetTrackUpdatesResponse {
-  ActiveTrack active_track = 1;
+  repeated Track tracks = 5;
+  bool is_queable = 6;
 }
