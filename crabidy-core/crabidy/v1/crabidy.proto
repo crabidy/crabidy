@@ -23,6 +23,7 @@ service CrabidyService {
   rpc Stop(StopRequest) returns (StopResponse);
   rpc ChangeVolume(ChangeVolumeRequest) returns (ChangeVolumeResponse);
   rpc ToggleMute(ToggleMuteRequest) returns (ToggleMuteResponse);
+  rpc ToggleShuffle(ToggleShuffleRequest) returns (ToggleShuffleResponse);
   rpc Next(NextRequest) returns (NextResponse);
   rpc Prev(PrevRequest) returns (PrevResponse);
   rpc RestartTrack(RestartTrackRequest) returns (RestartTrackResponse);
@@ -110,6 +111,9 @@ message ChangeVolumeResponse {}
 
 message ToggleMuteRequest {}
 message ToggleMuteResponse {}
+
+message ToggleShuffleRequest {}
+message ToggleShuffleResponse {}
 
 message NextRequest {}
 message NextResponse {}
