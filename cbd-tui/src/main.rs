@@ -2,8 +2,8 @@ mod rpc;
 
 use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient,
-    get_update_stream_response::Update as StreamUpdate, GetLibraryNodeRequest, LibraryNode,
-    PlayState, Queue, QueueTrack, Track, TrackPosition,
+    get_update_stream_response::Update as StreamUpdate, GetLibraryNodeRequest,
+    InitResponse as InitialData, LibraryNode, PlayState, Queue, QueueTrack, Track, TrackPosition,
 };
 
 use crossterm::{
@@ -385,6 +385,7 @@ impl App {
 
 // FIXME: Rename this
 enum MessageToUi {
+    Init(InitialData),
     ReplaceLibraryNode(LibraryNode),
     Update(StreamUpdate),
 }
@@ -449,6 +450,9 @@ async fn orchestrate<'a>(
         tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
     }
 
+    let init_data = rpc_client.init().await?;
+    tx.send_async(MessageToUi::Init(init_data)).await?;
+
     loop {
         poll(&mut rpc_client, &rx, &tx).await.ok();
     }
@@ -488,6 +492,18 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
             match message {
                 MessageToUi::ReplaceLibraryNode(node) => {
                     app.library.update(node);
+                }
+                MessageToUi::Init(init_data) => {
+                    if let Some(queue) = init_data.queue {
+                        app.queue.update(queue);
+                    }
+                    if let Some(track) = init_data.queue_track {
+                        app.now_playing.update_track(track.track);
+                        app.queue.update_position(track.queue_position as usize);
+                    }
+                    if let Some(ps) = PlayState::from_i32(init_data.play_state) {
+                        app.now_playing.update_play_state(ps);
+                    }
                 }
                 MessageToUi::Update(update) => match update {
                     StreamUpdate::Queue(queue) => {
@@ -697,6 +713,10 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             PlayState::Playing => "♫",
             _ => "",
         };
+        let album_text = match &track.album {
+            Some(album) => album.title.to_string(),
+            None => "No album".to_string(),
+        };
         vec![
             Spans::from(Span::raw("")),
             Spans::from(Span::raw(play_text)),
@@ -711,7 +731,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                     Style::default().add_modifier(Modifier::BOLD),
                 ),
             ]),
-            Spans::from(Span::raw("Album missing")),
+            Spans::from(Span::raw(album_text)),
         ]
     } else {
         vec![

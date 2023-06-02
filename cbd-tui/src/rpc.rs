@@ -2,7 +2,7 @@ use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient, get_update_stream_response::Update,
     GetLibraryNodeRequest, GetLibraryNodeResponse, GetUpdateStreamRequest, GetUpdateStreamResponse,
     LibraryNode, ReplaceRequest, SetCurrentRequest, SetCurrentResponse, TogglePlayRequest,
-    TogglePlayResponse,
+    TogglePlayResponse, InitRequest, InitResponse,
 };
 
 use std::{
@@ -72,6 +72,12 @@ impl RpcClient {
         let update_stream = Self::get_update_stream(&mut self.client).await;
         // FIXME: apparently mem::replace doesn't do anything here
         mem::replace(&mut self.update_stream, update_stream);
+    }
+
+    pub async fn init(&mut self) -> Result<InitResponse, Box<dyn Error>> {
+        let init_request = Request::new(InitRequest {});
+        let response = self.client.init(init_request).await?;
+        Ok(response.into_inner())
     }
 
     pub async fn get_library_node(
