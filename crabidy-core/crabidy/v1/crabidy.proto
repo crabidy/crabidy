@@ -65,12 +65,13 @@ message AppendRequest {
 message AppendResponse {}
 
 message RemoveRequest {
-  repeated string uuid = 1;
+  repeated uint32 positions = 1;
 }
 message RemoveResponse {}
 
 message InsertRequest {
-  repeated string uuid = 1;
+  uint32 position = 1;
+  repeated string uuid = 2;
 }
 message InsertResponse {}
 
@@ -105,7 +106,7 @@ message StopRequest {}
 message StopResponse {}
 
 message ChangeVolumeRequest {
-  int32 delta = 1;
+  float delta = 1;
 }
 message ChangeVolumeResponse {}
 

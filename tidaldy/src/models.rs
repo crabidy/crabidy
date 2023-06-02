@@ -158,9 +158,10 @@ pub struct Track {
 impl From<Track> for crabidy_core::proto::crabidy::Track {
     fn from(track: Track) -> Self {
         Self {
-            uuid: track.id.to_string(),
+            uuid: format!("track:{}", track.id),
             title: track.title,
             artist: track.artist.name,
+            album: Some(track.album.into()),
             duration: Some(track.duration as u32),
         }
     }
@@ -169,9 +170,10 @@ impl From<Track> for crabidy_core::proto::crabidy::Track {
 impl From<&Track> for crabidy_core::proto::crabidy::Track {
     fn from(track: &Track) -> Self {
         Self {
-            uuid: track.id.to_string(),
+            uuid: format!("track:{}", track.id),
             title: track.title.clone(),
             artist: track.artist.name.clone(),
+            album: Some(track.album.clone().into()),
             duration: Some(track.duration as u32),
         }
     }
@@ -206,6 +208,15 @@ pub struct Album {
     pub vibrant_color: String,
     pub video_cover: Value,
     pub release_date: Option<String>,
+}
+
+impl From<Album> for crabidy_core::proto::crabidy::Album {
+    fn from(album: Album) -> Self {
+        Self {
+            title: album.title,
+            release_date: album.release_date,
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -306,10 +317,9 @@ impl From<Playlist> for crabidy_core::proto::crabidy::LibraryNode {
     fn from(a: Playlist) -> Self {
         crabidy_core::proto::crabidy::LibraryNode {
             title: a.title,
-            uuid: format!("playlist:{}", a.uuid),
+            uuid: format!("node:playlist:{}", a.uuid),
             tracks: Vec::new(),
             parent: None,
-            state: crabidy_core::proto::crabidy::LibraryNodeState::Done as i32,
             children: Vec::new(),
             is_queable: true,
         }

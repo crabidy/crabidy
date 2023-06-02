@@ -34,7 +34,7 @@ impl std::fmt::Display for ProviderError {
 impl LibraryNode {
     pub fn new() -> Self {
         Self {
-            uuid: "/".to_string(),
+            uuid: "node:/".to_string(),
             title: "/".to_string(),
             children: Vec::new(),
             parent: None,
@@ -104,5 +104,13 @@ impl Queue {
                 self.tracks.remove(*pos as usize);
             }
         }
+    }
+
+    pub fn insert_tracks(&mut self, position: u32, tracks: &[Track]) {
+        let tail: Vec<Track> = self
+            .tracks
+            .splice((position as usize).., tracks.to_vec())
+            .collect();
+        self.tracks.extend(tail);
     }
 }

@@ -44,7 +44,8 @@ impl crabidy_core::ProviderClient for Client {
         &self,
         track_uuid: &str,
     ) -> Result<Vec<String>, crabidy_core::ProviderError> {
-        let Ok(playback) = self.get_track_playback(track_uuid).await else {
+        let (_, track_uuid, _) = split_uuid(track_uuid);
+        let Ok(playback) = self.get_track_playback(&track_uuid).await else {
                   return Err(crabidy_core::ProviderError::FetchError)
                 };
         let Ok(manifest) = playback.get_manifest() else {
@@ -66,14 +67,13 @@ impl crabidy_core::ProviderClient for Client {
     fn get_lib_root(&self) -> crabidy_core::proto::crabidy::LibraryNode {
         let global_root = crabidy_core::proto::crabidy::LibraryNode::new();
         let children = vec![crabidy_core::proto::crabidy::LibraryNodeChild::new(
-            "userplaylists".to_string(),
+            "node:userplaylists".to_string(),
             "playlists".to_string(),
         )];
         crabidy_core::proto::crabidy::LibraryNode {
-            uuid: "tidal".to_string(),
+            uuid: "node:tidal".to_string(),
             title: "tidal".to_string(),
             parent: Some(format!("{}", global_root.uuid)),
-            state: crabidy_core::proto::crabidy::LibraryNodeState::Done as i32,
             tracks: Vec::new(),
             children,
             is_queable: false,
@@ -87,14 +87,13 @@ impl crabidy_core::ProviderClient for Client {
         let Some(user_id) = self.settings.login.user_id.clone() else {
           return Err(crabidy_core::ProviderError::UnknownUser)
     };
-        let (module, uuid) = split_uuid(uuid);
+        let (_kind, module, uuid) = split_uuid(uuid);
         let node = match module.as_str() {
             "userplaylists" => {
                 let mut node = crabidy_core::proto::crabidy::LibraryNode {
-                    uuid: "userplaylists".to_string(),
+                    uuid: "node:userplaylists".to_string(),
                     title: "playlists".to_string(),
-                    parent: Some("tidal".to_string()),
-                    state: crabidy_core::proto::crabidy::LibraryNodeState::Unspecified as i32,
+                    parent: Some("node:tidal".to_string()),
                     tracks: Vec::new(),
                     children: Vec::new(),
                     is_queable: false,
@@ -104,7 +103,7 @@ impl crabidy_core::ProviderClient for Client {
                     .await?
                 {
                     let child = crabidy_core::proto::crabidy::LibraryNodeChild::new(
-                        format!("playlist:{}", playlist.playlist.uuid),
+                        format!("node:playlist:{}", playlist.playlist.uuid),
                         playlist.playlist.title,
                     );
                     node.children.push(child);
@@ -121,7 +120,7 @@ impl crabidy_core::ProviderClient for Client {
                     .map(|t| t.into())
                     .collect();
                 node.tracks = tracks;
-                node.parent = Some("userplaylists".to_string());
+                node.parent = Some("node:userplaylists".to_string());
                 node
             }
             _ => return Err(crabidy_core::ProviderError::MalformedUuid),
@@ -130,9 +129,10 @@ impl crabidy_core::ProviderClient for Client {
     }
 }
 
-fn split_uuid(uuid: &str) -> (String, String) {
-    let mut split = uuid.splitn(2, ':');
+fn split_uuid(uuid: &str) -> (String, String, String) {
+    let mut split = uuid.splitn(3, ':');
     (
+        split.next().unwrap_or("").to_string(),
         split.next().unwrap_or("").to_string(),
         split.next().unwrap_or("").to_string(),
     )
@@ -369,6 +369,7 @@ impl Client {
     }
 
     pub async fn get_track(&self, track_id: &str) -> Result<Track, ClientError> {
+        let (_, track_id, _) = split_uuid(track_id);
         self.make_request(&format!("tracks/{}", track_id), None)
             .await
     }

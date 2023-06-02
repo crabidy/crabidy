@@ -349,7 +349,7 @@ impl App {
     fn new() -> App {
         let mut library = LibraryView {
             title: "Library".to_string(),
-            uuid: "/".to_string(),
+            uuid: "node:/".to_string(),
             list: Vec::new(),
             list_state: ListState::default(),
             positions: HashMap::new(),
@@ -443,9 +443,9 @@ async fn poll(
 async fn orchestrate<'a>(
     (tx, rx): (Sender<MessageToUi>, Receiver<MessageFromUi>),
 ) -> Result<(), Box<dyn Error>> {
-    let mut rpc_client = rpc::RpcClient::connect("http://127.0.0.1:50051").await?;
+    let mut rpc_client = rpc::RpcClient::connect("http://localhost:50051").await?;
 
-    if let Some(root_node) = rpc_client.get_library_node("/").await? {
+    if let Some(root_node) = rpc_client.get_library_node("node:/").await? {
         tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
     }
 
