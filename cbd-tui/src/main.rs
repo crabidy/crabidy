@@ -157,7 +157,6 @@ enum UiItemKind {
 }
 
 struct UiItem {
-    active: bool,
     uuid: String,
     title: String,
     kind: UiItemKind,
@@ -185,10 +184,9 @@ impl ListView for QueueView {
 }
 
 impl QueueView {
-    // FIXME: implement skip on server
     fn skip(&self, tx: &Sender<MessageFromUi>) {
         if self.current_position < self.get_size() - 1 {
-            tx.send(MessageFromUi::SetCurrentTrack(self.current_position + 1));
+            tx.send(MessageFromUi::Next);
         }
     }
     fn play_selected(&self, tx: &Sender<MessageFromUi>) {
@@ -199,7 +197,7 @@ impl QueueView {
     fn update_position(&mut self, pos: usize) {
         self.current_position = pos;
     }
-    fn update(&mut self, queue: Queue) {
+    fn update_queue(&mut self, queue: Queue) {
         self.current_position = queue.current_position as usize;
         self.list = queue
             .tracks
@@ -209,7 +207,6 @@ impl QueueView {
                 uuid: t.uuid.clone(),
                 title: format!("{} - {}", t.artist, t.title),
                 kind: UiItemKind::Track,
-                active: i == queue.current_position as usize,
             })
             .collect();
 
@@ -292,7 +289,6 @@ impl LibraryView {
                     uuid: t.uuid.clone(),
                     title: format!("{} - {}", t.artist, t.title),
                     kind: UiItemKind::Track,
-                    active: false,
                 })
                 .collect();
         } else {
@@ -304,7 +300,6 @@ impl LibraryView {
                     uuid: c.uuid.clone(),
                     title: c.title.clone(),
                     kind: UiItemKind::Node,
-                    active: false,
                 })
                 .collect();
         }
@@ -393,6 +388,7 @@ enum MessageToUi {
 // FIXME: Rename this
 enum MessageFromUi {
     GetLibraryNode(String),
+    Next,
     ReplaceQueue(String),
     SetCurrentTrack(usize),
     TogglePlay,
@@ -419,6 +415,9 @@ async fn poll(
                 }
                 MessageFromUi::SetCurrentTrack(pos) => {
                     rpc_client.set_current_track(pos).await?
+                }
+                MessageFromUi::Next => {
+                    // FIXME:
                 }
 
             }
@@ -495,7 +494,7 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                 }
                 MessageToUi::Init(init_data) => {
                     if let Some(queue) = init_data.queue {
-                        app.queue.update(queue);
+                        app.queue.update_queue(queue);
                     }
                     if let Some(track) = init_data.queue_track {
                         app.now_playing.update_track(track.track);
@@ -507,7 +506,7 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                 }
                 MessageToUi::Update(update) => match update {
                     StreamUpdate::Queue(queue) => {
-                        app.queue.update(queue);
+                        app.queue.update_queue(queue);
                     }
                     StreamUpdate::QueueTrack(track) => {
                         app.now_playing.update_track(track.track);
@@ -665,14 +664,15 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .queue
         .list
         .iter()
-        .map(|i| {
-            // let color = if i.active { COLOR_RED } else { Color::Reset };
-            let title = if i.active {
-                format!("> {}", i.title)
+        .enumerate()
+        .map(|(idx, item)| {
+            let active = idx == app.queue.current_position;
+            let title = if active {
+                format!("> {}", item.title)
             } else {
-                i.title.to_string()
+                item.title.to_string()
             };
-            let style = if i.active {
+            let style = if active {
                 Style::default().add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
