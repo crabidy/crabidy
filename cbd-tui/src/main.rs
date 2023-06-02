@@ -137,7 +137,7 @@ trait ListView {
             }
             Some(selected) => {
                 if selected > self.get_size().saturating_sub(1) {
-                    self.select(Some(0));
+                    self.select(Some(self.get_size() - 1));
                 }
             }
         }
@@ -601,10 +601,10 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         (_, KeyModifiers::NONE, KeyCode::Char('p')) => {
                             tx.send(MessageFromUi::RestartTrack);
                         }
-                        (_, KeyModifiers::SHIFT, KeyCode::Char('j')) => {
+                        (_, KeyModifiers::SHIFT, KeyCode::Char('J')) => {
                             tx.send(MessageFromUi::ChangeVolume(-0.1));
                         }
-                        (_, KeyModifiers::SHIFT, KeyCode::Char('k')) => {
+                        (_, KeyModifiers::SHIFT, KeyCode::Char('K')) => {
                             tx.send(MessageFromUi::ChangeVolume(0.1));
                         }
                         (_, KeyModifiers::NONE, KeyCode::Char('m')) => {
@@ -619,7 +619,7 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('g')) => {
                             app.library.first();
                         }
-                        (UiFocus::Library, KeyModifiers::SHIFT, KeyCode::Char('g')) => {
+                        (UiFocus::Library, KeyModifiers::SHIFT, KeyCode::Char('G')) => {
                             app.library.last();
                         }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('j')) => {
@@ -640,7 +640,7 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('l')) => {
                             app.library.dive();
                         }
-                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('n')) => {
+                        (UiFocus::Library, KeyModifiers::SHIFT, KeyCode::Char('L')) => {
                             app.library.queue_queue();
                         }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('a')) => {
@@ -652,7 +652,7 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('g')) => {
                             app.queue.first();
                         }
-                        (UiFocus::Queue, KeyModifiers::SHIFT, KeyCode::Char('g')) => {
+                        (UiFocus::Queue, KeyModifiers::SHIFT, KeyCode::Char('G')) => {
                             app.queue.last();
                         }
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('j')) => {
