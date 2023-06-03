@@ -3,6 +3,7 @@
 use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
 use tokio::time::{sleep, Duration, Instant};
+use tracing::{debug, instrument};
 pub mod config;
 pub mod models;
 use async_trait::async_trait;
@@ -16,6 +17,7 @@ pub struct Client {
 
 #[async_trait]
 impl crabidy_core::ProviderClient for Client {
+    #[instrument(skip(raw_toml_settings))]
     async fn init(raw_toml_settings: &str) -> Result<Self, crabidy_core::ProviderError> {
         let settings: config::Settings = if let Ok(settings) = toml::from_str(raw_toml_settings) {
             settings
@@ -37,34 +39,43 @@ impl crabidy_core::ProviderClient for Client {
         }
         Err(crabidy_core::ProviderError::CouldNotLogin)
     }
+    #[instrument(skip(self))]
     fn settings(&self) -> String {
-        toml::to_string_pretty(&self.settings).unwrap()
+        toml::to_string_pretty(&self.settings).unwrap_or_default()
     }
+    #[instrument(skip(self))]
     async fn get_urls_for_track(
         &self,
         track_uuid: &str,
     ) -> Result<Vec<String>, crabidy_core::ProviderError> {
+        debug!("get_urls_for_track {}", track_uuid);
         let (_, track_uuid, _) = split_uuid(track_uuid);
         let Ok(playback) = self.get_track_playback(&track_uuid).await else {
                   return Err(crabidy_core::ProviderError::FetchError)
                 };
+        debug!("playback {:?}", playback);
         let Ok(manifest) = playback.get_manifest() else {
                   return Err(crabidy_core::ProviderError::FetchError)
                 };
+        debug!("manifest {:?}", manifest);
         Ok(manifest.urls)
     }
 
+    #[instrument(skip(self))]
     async fn get_metadata_for_track(
         &self,
         track_uuid: &str,
     ) -> Result<crabidy_core::proto::crabidy::Track, crabidy_core::ProviderError> {
+        debug!("get_metadata_for_track {}", track_uuid);
         let Ok(track) = self.get_track(track_uuid).await else {
                   return Err(crabidy_core::ProviderError::FetchError)
                 };
         Ok(track.into())
     }
 
+    #[instrument(skip(self))]
     fn get_lib_root(&self) -> crabidy_core::proto::crabidy::LibraryNode {
+        debug!("get_lib_root");
         let global_root = crabidy_core::proto::crabidy::LibraryNode::new();
         let children = vec![crabidy_core::proto::crabidy::LibraryNodeChild::new(
             "node:userplaylists".to_string(),
@@ -80,6 +91,7 @@ impl crabidy_core::ProviderClient for Client {
         }
     }
 
+    #[instrument(skip(self))]
     async fn get_lib_node(
         &self,
         uuid: &str,
@@ -87,6 +99,7 @@ impl crabidy_core::ProviderClient for Client {
         let Some(user_id) = self.settings.login.user_id.clone() else {
           return Err(crabidy_core::ProviderError::UnknownUser)
     };
+        debug!("get_lib_node {}", uuid);
         let (_kind, module, uuid) = split_uuid(uuid);
         let node = match module.as_str() {
             "userplaylists" => {
@@ -129,6 +142,7 @@ impl crabidy_core::ProviderClient for Client {
     }
 }
 
+#[instrument]
 fn split_uuid(uuid: &str) -> (String, String, String) {
     let mut split = uuid.splitn(3, ':');
     (
@@ -150,10 +164,12 @@ impl Client {
         })
     }
 
+    #[instrument]
     pub fn get_user_id(&self) -> Option<String> {
         self.settings.login.user_id.clone()
     }
 
+    #[instrument]
     pub async fn make_request<T: DeserializeOwned>(
         &self,
         uri: &str,
@@ -187,6 +203,7 @@ impl Client {
         Ok(response)
     }
 
+    #[instrument]
     pub async fn make_paginated_request<T: DeserializeOwned>(
         &self,
         uri: &str,
@@ -244,6 +261,7 @@ impl Client {
         Ok(items)
     }
 
+    #[instrument]
     pub async fn make_explorer_request(
         &self,
         uri: &str,
@@ -278,6 +296,7 @@ impl Client {
         Ok(())
     }
 
+    #[instrument]
     pub async fn search(&self, query: &str) -> Result<(), ClientError> {
         let query = vec![("query", query.to_string())];
         self.make_explorer_request(&format!("search/artists"), Some(&query))
@@ -285,6 +304,7 @@ impl Client {
         Ok(())
     }
 
+    #[instrument]
     pub async fn get_playlist_tracks(
         &self,
         playlist_uuid: &str,
@@ -294,18 +314,21 @@ impl Client {
             .await?)
     }
 
+    #[instrument]
     pub async fn get_playlist(&self, playlist_uuid: &str) -> Result<Playlist, ClientError> {
         Ok(self
             .make_request(&format!("playlists/{}", playlist_uuid), None)
             .await?)
     }
 
+    #[instrument]
     pub async fn get_users_playlists(&self, user_id: u64) -> Result<Vec<Playlist>, ClientError> {
         Ok(self
             .make_paginated_request(&format!("users/{}/playlists", user_id), None)
             .await?)
     }
 
+    #[instrument]
     pub async fn get_users_playlists_and_favorite_playlists(
         &self,
         user_id: &str,
@@ -318,6 +341,7 @@ impl Client {
             .await?)
     }
 
+    #[instrument]
     pub async fn explore_get_users_playlists_and_favorite_playlists(
         &self,
         user_id: u64,
@@ -335,6 +359,7 @@ impl Client {
         Ok(())
     }
 
+    #[instrument]
     pub async fn get_users_favorites(&self, user_id: u64) -> Result<(), ClientError> {
         self.make_explorer_request(
             &format!("users/{}/favorites", user_id),
@@ -345,6 +370,7 @@ impl Client {
         Ok(())
     }
 
+    #[instrument]
     pub async fn get_user(&self, user_id: u64) -> Result<(), ClientError> {
         self.make_explorer_request(
             &format!("users/{}", user_id),
@@ -355,6 +381,7 @@ impl Client {
         Ok(())
     }
 
+    #[instrument]
     pub async fn get_track_playback(&self, track_id: &str) -> Result<TrackPlayback, ClientError> {
         let query = vec![
             ("audioquality", "LOSSLESS".to_string()),
@@ -368,12 +395,14 @@ impl Client {
         .await
     }
 
+    #[instrument]
     pub async fn get_track(&self, track_id: &str) -> Result<Track, ClientError> {
         let (_, track_id, _) = split_uuid(track_id);
         self.make_request(&format!("tracks/{}", track_id), None)
             .await
     }
 
+    #[instrument]
     pub async fn login_web(&mut self) -> Result<(), ClientError> {
         let code_response = self.get_device_code().await?;
         let now = Instant::now();
@@ -399,6 +428,7 @@ impl Client {
         Err(ClientError::ConnectionError)
     }
 
+    #[instrument(skip(self))]
     pub async fn login_config(&mut self) -> Result<(), ClientError> {
         let Some(access_token) = self.settings.login.access_token.clone() else {
             return Err(ClientError::AuthError(
@@ -427,6 +457,7 @@ impl Client {
         Ok(())
     }
 
+    #[instrument]
     pub async fn refresh_access_token(&self) -> Result<RefreshResponse, ClientError> {
         let Some(refresh_token) = self.settings.login.refresh_token.clone() else {
         return Err(ClientError::AuthError(
@@ -462,6 +493,7 @@ impl Client {
             ))
         }
     }
+    #[instrument]
     async fn get_device_code(&self) -> Result<DeviceAuthResponse, ClientError> {
         let req = DeviceAuthRequest {
             client_id: self.settings.oauth.client_id.clone(),
@@ -487,6 +519,7 @@ impl Client {
         Ok(code)
     }
 
+    #[instrument]
     pub async fn check_auth_status(
         &self,
         device_code: &str,
@@ -533,7 +566,7 @@ mod tests {
 
     fn setup() -> Client {
         let settings = crate::config::Settings::default();
-        Client::new(settings).unwrap()
+        Client::new(settings).expect("could not create tidaldy client")
     }
 
     #[tokio::test]

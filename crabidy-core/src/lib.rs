@@ -56,7 +56,7 @@ pub enum QueueError {
 }
 
 impl Queue {
-    pub fn current(&self) -> Option<Track> {
+    pub fn current_track(&self) -> Option<Track> {
         if self.current_position < self.tracks.len() as u32 {
             Some(self.tracks[self.current_position as usize].clone())
         } else {
@@ -73,6 +73,15 @@ impl Queue {
         }
     }
 
+    pub fn prev_track(&mut self) -> Option<Track> {
+        if 0 < self.current_position {
+            self.current_position -= 1;
+            Some(self.tracks[self.current_position as usize].clone())
+        } else {
+            None
+        }
+    }
+
     pub fn set_current_position(&mut self, current_position: u32) -> bool {
         if current_position < self.tracks.len() as u32 {
             self.current_position = current_position;
@@ -82,9 +91,14 @@ impl Queue {
         }
     }
 
-    pub fn replace_with_tracks(&mut self, tracks: &[Track]) {
+    pub fn replace_with_tracks(&mut self, tracks: &[Track]) -> Option<Track> {
         self.current_position = 0;
         self.tracks = tracks.to_vec();
+        if 0 < self.tracks.len() as u32 {
+            Some(self.tracks[0].clone())
+        } else {
+            None
+        }
     }
 
     pub fn append_tracks(&mut self, tracks: &[Track]) {
@@ -94,23 +108,35 @@ impl Queue {
     pub fn queue_tracks(&mut self, tracks: &[Track]) {
         let tail: Vec<Track> = self
             .tracks
-            .splice((self.current_position as usize).., tracks.to_vec())
+            .splice((self.current_position as usize + 1).., tracks.to_vec())
             .collect();
         self.tracks.extend(tail);
     }
 
-    pub fn remove_tracks(&mut self, positions: &[u32]) {
+    pub fn remove_tracks(&mut self, positions: &[u32]) -> Option<Track> {
+        let mut play_next = false;
         for pos in positions {
+            if pos == &self.current_position {
+                play_next = true;
+            }
+            if pos < &self.current_position {
+                self.current_position -= 1;
+            }
             if *pos < self.tracks.len() as u32 {
                 self.tracks.remove(*pos as usize);
             }
+        }
+        if play_next {
+            self.current_track()
+        } else {
+            None
         }
     }
 
     pub fn insert_tracks(&mut self, position: u32, tracks: &[Track]) {
         let tail: Vec<Track> = self
             .tracks
-            .splice((position as usize).., tracks.to_vec())
+            .splice((position as usize + 1).., tracks.to_vec())
             .collect();
         self.tracks.extend(tail);
     }
