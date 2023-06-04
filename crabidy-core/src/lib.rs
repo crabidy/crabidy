@@ -65,7 +65,7 @@ impl Queue {
     }
 
     pub fn next_track(&mut self) -> Option<Track> {
-        if self.current_position < self.tracks.len() as u32 {
+        if self.current_position < self.tracks.len() as u32 - 1 {
             self.current_position += 1;
             Some(self.tracks[self.current_position as usize].clone())
         } else {
