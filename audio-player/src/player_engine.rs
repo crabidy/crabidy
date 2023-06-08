@@ -1,15 +1,16 @@
 use flume::Sender;
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
+use std::thread;
 use std::time::Duration;
 use std::{fs::File, sync::atomic::Ordering};
 use symphonia::core::probe::Hint;
-use tracing::warn;
+use tracing::{debug, warn};
 use url::Url;
 
 use crate::decoder::{MediaInfo, SymphoniaDecoder};
 use anyhow::{anyhow, Result};
-use rodio::{OutputStream, Sink, Source};
+use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 use stream_download::StreamDownload;
 use symphonia::core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
 use thiserror::Error;
@@ -64,6 +65,7 @@ pub struct PlayerEngine {
     sink: Sink,
     // We need to keep the stream around as it will stop playing when it's dropped
     _stream: OutputStream,
+    _handle: OutputStreamHandle,
     tx_engine: Sender<PlayerEngineCommand>,
     tx_player: Sender<PlayerMessage>,
 }
@@ -81,6 +83,7 @@ impl PlayerEngine {
             elapsed: Duration::default(),
             sink,
             _stream,
+            _handle: handle,
             tx_engine,
             tx_player,
         })
@@ -90,9 +93,7 @@ impl PlayerEngine {
         let tx_player = self.tx_player.clone();
         let tx_engine = self.tx_engine.clone();
 
-        if !self.sink.empty() {
-            self.reset();
-        }
+        self.reset();
 
         let (source, hint) = self.get_source(source_str)?;
         let mss = MediaSourceStream::new(source, MediaSourceStreamOptions::default());
@@ -196,7 +197,7 @@ impl PlayerEngine {
     }
 
     pub fn is_stopped(&self) -> bool {
-        self.sink.len() == 0
+        self.sink.empty()
     }
 
     pub fn duration(&self) -> Result<Duration> {
@@ -248,7 +249,7 @@ impl PlayerEngine {
         self.elapsed = Duration::default();
         self.current_source = None;
         self.sink.pause();
-        self.sink.clear();
+        self.sink.stop();
     }
 
     fn get_source(&self, source_str: &str) -> Result<(Box<dyn MediaSource>, Hint)> {

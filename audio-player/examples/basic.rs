@@ -5,46 +5,39 @@ use audio_player::{Player, PlayerMessage};
 #[tokio::main]
 async fn main() {
     let player = Player::default();
-    let messages = player.messages.clone();
 
-    // Make sure we read all the messages in time
-    thread::spawn(move || loop {
-        match messages.recv() {
-            Ok(PlayerMessage::Playing) => {
-                println!("PLAYING NEW TRACK");
-            }
-            Ok(PlayerMessage::Duration { duration }) => {
-                println!("DURATION: {:?}", duration);
-            }
-            Ok(PlayerMessage::Elapsed {
-                duration: _,
-                elapsed,
-            }) => {
+    player
+        .play("https://www2.cs.uic.edu/~i101/SoundFiles/gettysburg10.wav")
+        .await
+        .unwrap();
+
+    loop {
+        match player.messages.recv_async().await {
+            Ok(PlayerMessage::Elapsed { duration, elapsed }) => {
                 println!("ELAPSED: {:?}", elapsed);
             }
-            Ok(PlayerMessage::Stopped) => {
-                println!("STOPPED");
+            Ok(PlayerMessage::EndOfStream) => {
+                println!("END OF STREAM");
+                player
+                    .play("https://www2.cs.uic.edu/~i101/SoundFiles/preamble10.wav")
+                    .await
+                    .unwrap();
                 break;
             }
             _ => {}
         }
-    });
+    }
 
-    player
-        .play("https://www2.cs.uic.edu/~i101/SoundFiles/CantinaBand60.wav")
-        .await
-        .unwrap();
-
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    player.seek_to(Duration::from_secs(20)).await.unwrap();
-
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    player
-        .play("https://www2.cs.uic.edu/~i101/SoundFiles/PinkPanther60.wav")
-        .await
-        .unwrap();
-
-    tokio::time::sleep(Duration::from_secs(60)).await;
+    loop {
+        match player.messages.recv_async().await {
+            Ok(PlayerMessage::Elapsed { duration, elapsed }) => {
+                println!("ELAPSED: {:?}", elapsed);
+            }
+            Ok(PlayerMessage::EndOfStream) => {
+                println!("END OF STREAM 2");
+                break;
+            }
+            _ => {}
+        }
+    }
 }

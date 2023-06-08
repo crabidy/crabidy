@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     playback.run();
     info!("playback started");
 
-    let addr = "[::1]:50051".parse()?;
+    let addr = "0.0.0.0:50051".parse()?;
     Server::builder()
         .add_service(CrabidyServiceServer::new(crabidy_service))
         .serve(addr)

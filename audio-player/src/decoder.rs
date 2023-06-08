@@ -69,10 +69,6 @@ impl SymphoniaDecoder {
         }
     }
 
-    pub fn into_inner(self) -> MediaSourceStream {
-        self.format.into_inner()
-    }
-
     fn init(
         mss: MediaSourceStream,
         hint: Hint,

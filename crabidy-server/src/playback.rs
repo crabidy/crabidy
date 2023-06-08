@@ -467,9 +467,6 @@ impl Playback {
                     error!("{:?}", err)
                 }
             }
-            if let Err(err) = self.player.stop().await {
-                error!("{:?}", err)
-            };
             if let Err(err) = self.player.play(&urls[0]).await {
                 error!("{:?}", err)
             };
@@ -510,9 +507,6 @@ impl Playback {
                     error!("{:?}", err)
                 }
             }
-            if let Err(err) = self.player.stop().await {
-                error!("{:?}", err)
-            };
             if let Err(err) = self.player.play(&urls[0]).await {
                 error!("{:?}", err)
             }
