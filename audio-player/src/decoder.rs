@@ -1,7 +1,9 @@
-use flume::Sender;
 use std::error::Error;
 use std::fmt;
 use std::time::Duration;
+
+use flume::Sender;
+use rodio::Source;
 use symphonia::{
     core::{
         audio::{AudioBufferRef, SampleBuffer, SignalSpec},
@@ -17,9 +19,7 @@ use symphonia::{
 };
 use tracing::warn;
 
-use rodio::Source;
-
-use crate::PlayerEngineCommand;
+use crate::player_engine::PlayerEngineCommand;
 
 // Decoder errors are not considered fatal.
 // The correct action is to just get a new packet and try again.
