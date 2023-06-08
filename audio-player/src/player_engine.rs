@@ -94,6 +94,7 @@ impl PlayerEngine {
         let duration = media_info.duration.unwrap_or_default();
 
         self.media_info = Some(media_info);
+        self.current_source = Some(source_str.to_string());
 
         tx_player
             .send(PlayerMessage::Duration { duration })
