@@ -5,6 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
+use decoder::MediaInfo;
 use flume::{Receiver, Sender};
 
 pub use player_engine::PlayerMessage;
@@ -66,24 +67,29 @@ impl Default for Player {
 impl Player {
     // FIXME: this could check if the player started playing using a channel
     // Then it would be async (wait for Playing for example)
-    pub fn play(&self, source_str: &str) {
+    pub async fn play(&self, source_str: &str) -> Result<()> {
         self.tx_engine
             .send(PlayerEngineCommand::Play(source_str.to_string()));
+        Ok(())
     }
 
-    pub fn pause(&self) {
+    pub async fn pause(&self) -> Result<()> {
         self.tx_engine.send(PlayerEngineCommand::Pause);
+        Ok(())
     }
 
-    pub fn unpause(&self) {
+    pub async fn unpause(&self) -> Result<()> {
         self.tx_engine.send(PlayerEngineCommand::Unpause);
+        Ok(())
     }
 
-    pub fn toggle_play(&self) {
+    pub async fn toggle_play(&self) -> Result<()> {
         self.tx_engine.send(PlayerEngineCommand::TogglePlay);
+        Ok(())
     }
 
-    pub fn stop(&self) {
+    pub async fn stop(&self) -> Result<()> {
         self.tx_engine.send(PlayerEngineCommand::Stop);
+        Ok(())
     }
 }
