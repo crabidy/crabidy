@@ -344,7 +344,9 @@ impl NowPlayingView {
     fn update_play_state(&mut self, play_state: PlayState) {
         self.play_state = play_state;
     }
-    fn update_position(&mut self, pos: TrackPosition) {}
+    fn update_position(&mut self, pos: TrackPosition) {
+        self.elapsed = Some(pos.position as f64 / pos.duration as f64);
+    }
     fn update_track(&mut self, active: Option<Track>) {
         if let Some(track) = &active {
             Notification::new()
