@@ -345,6 +345,7 @@ impl NowPlayingView {
         self.play_state = play_state;
     }
     fn update_position(&mut self, pos: TrackPosition) {
+        self.completion = Some(pos.position);
         self.elapsed = Some(pos.position as f64 / pos.duration as f64);
     }
     fn update_track(&mut self, active: Option<Track>) {
@@ -503,7 +504,7 @@ async fn poll(
 async fn orchestrate<'a>(
     (tx, rx): (Sender<MessageToUi>, Receiver<MessageFromUi>),
 ) -> Result<(), Box<dyn Error>> {
-    let mut rpc_client = rpc::RpcClient::connect("http://localhost:50051").await?;
+    let mut rpc_client = rpc::RpcClient::connect("http://192.168.178.32:50051").await?;
 
     if let Some(root_node) = rpc_client.get_library_node("node:/").await? {
         tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
@@ -845,6 +846,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     if let (Some(elapsed), Some(track)) = (app.now_playing.elapsed, &app.now_playing.track) {
         let progress = LineGauge::default()
+            .label("")
             .block(Block::default().borders(Borders::NONE))
             .gauge_style(Style::default().fg(COLOR_SECONDARY).bg(Color::Black))
             .ratio(elapsed);
