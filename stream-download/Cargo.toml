@@ -12,7 +12,11 @@ futures = "0.3"
 futures-util = "0.3"
 parking_lot = "0.12"
 rangemap = "1"
-reqwest = { version = "0.11", features = ["stream"], optional = true }
+reqwest = { version = "0.11", features = [
+  "rustls-tls",
+  "trust-dns",
+  "stream",
+], default-features = false, optional = true }
 symphonia = "0.5"
 tempfile = "3"
 tokio = { version = "1", features = ["sync", "macros"] }
