@@ -33,6 +33,7 @@ pub enum PlayerMessage {
     Stopped,
     Paused,
     Playing,
+    EndOfStream,
 }
 
 // TODO:
@@ -118,6 +119,15 @@ impl PlayerEngine {
             self.sink.take();
             self.stream.take();
             self.tx_player.send(PlayerMessage::Stopped);
+        }
+    }
+
+    pub fn handle_eos(&mut self) {
+        if let Some(sink) = &self.sink {
+            sink.stop();
+            self.sink.take();
+            self.stream.take();
+            self.tx_player.send(PlayerMessage::EndOfStream);
         }
     }
 

@@ -48,7 +48,7 @@ impl Default for Player {
                         player.toggle_play();
                     }
                     Ok(PlayerEngineCommand::Eos) => {
-                        player.stop();
+                        player.handle_eos();
                     }
                     Err(e) => {
                         // FIXME: debug!(e);
