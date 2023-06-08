@@ -4,5 +4,6 @@ members = [
   "cbd-tui",
   "crabidy-core",
   "crabidy-server",
+  "stream-download",
   "tidaldy",
 ]
