@@ -1,7 +1,8 @@
 use flume::Sender;
-use std::fs::File;
 use std::path::Path;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
+use std::{fs::File, sync::atomic::Ordering};
 use symphonia::core::probe::Hint;
 use tracing::warn;
 use url::Url;
@@ -10,9 +11,7 @@ use crate::decoder::{MediaInfo, SymphoniaDecoder};
 use anyhow::{anyhow, Result};
 use rodio::{OutputStream, Sink, Source};
 use stream_download::StreamDownload;
-use symphonia::core::io::{
-    MediaSource, MediaSourceStream, MediaSourceStreamOptions, ReadOnlySource,
-};
+use symphonia::core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
 use thiserror::Error;
 
 pub enum PlayerEngineCommand {
@@ -25,6 +24,7 @@ pub enum PlayerEngineCommand {
     Stop(Sender<Result<()>>),
     GetDuration(Sender<Result<Duration>>),
     GetElapsed(Sender<Result<Duration>>),
+    SeekTo(Duration, Sender<Result<Duration>>),
     GetVolume(Sender<f32>),
     GetPaused(Sender<Result<bool>>),
     Eos,
@@ -48,10 +48,17 @@ pub enum PlayerMessage {
 // TODO:
 // * Emit buffering
 
+#[derive(Debug, Error)]
+pub enum PlayerEngineError {
+    #[error("Sink is not playing")]
+    NotPlaying,
+}
+
+// Used for seeking in the stream
+static SEEK_TO: AtomicU64 = AtomicU64::new(0);
+
 pub struct PlayerEngine {
     elapsed: Duration,
-    // FIXME: We only need this to re-start a track
-    // Might do that using seeking in the future
     current_source: Option<String>,
     media_info: Option<MediaInfo>,
     sink: Sink,
@@ -59,12 +66,6 @@ pub struct PlayerEngine {
     _stream: OutputStream,
     tx_engine: Sender<PlayerEngineCommand>,
     tx_player: Sender<PlayerMessage>,
-}
-
-#[derive(Debug, Error)]
-pub enum PlayerEngineError {
-    #[error("Sink is not playing")]
-    NotPlaying,
 }
 
 impl PlayerEngine {
@@ -110,6 +111,11 @@ impl PlayerEngine {
 
         // FIXME: regularly update metadata revision
         let decoder = decoder.periodic_access(Duration::from_millis(250), move |src| {
+            let seek = SEEK_TO.load(Ordering::SeqCst);
+            if seek > 0 {
+                src.seek(Duration::from_secs(seek));
+                SEEK_TO.store(0, Ordering::SeqCst);
+            }
             let elapsed = src.elapsed();
             tx_engine
                 .send(PlayerEngineCommand::SetElapsed(elapsed))
@@ -208,6 +214,16 @@ impl PlayerEngine {
         Ok(self.elapsed)
     }
 
+    pub fn seek_to(&self, time: Duration) -> Result<Duration> {
+        // We can seek between 1 second and the total duration of the track
+        let duration = self.duration().unwrap_or(self.elapsed);
+        let time = time.clamp(Duration::from_secs(1), duration);
+        SEEK_TO.store(time.as_secs(), Ordering::SeqCst);
+        // FIXME: ideally we would like to return once the seeking is successful
+        // then return the current elapsed time
+        Ok(time)
+    }
+
     pub fn volume(&self) -> f32 {
         self.sink.volume()
     }
@@ -243,7 +259,7 @@ impl PlayerEngine {
                     let path = Path::new(url.path());
                     let hint = self.get_hint(path);
 
-                    Ok((Box::new(ReadOnlySource::new(reader)), hint))
+                    Ok((Box::new(reader), hint))
                 } else {
                     Err(anyhow!("Not a valid URL scheme: {}", url.scheme()))
                 }

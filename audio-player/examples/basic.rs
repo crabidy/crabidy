@@ -35,7 +35,11 @@ async fn main() {
         .await
         .unwrap();
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    player.seek_to(Duration::from_secs(20)).await.unwrap();
+
+    tokio::time::sleep(Duration::from_secs(10)).await;
 
     player
         .play("https://www2.cs.uic.edu/~i101/SoundFiles/PinkPanther60.wav")

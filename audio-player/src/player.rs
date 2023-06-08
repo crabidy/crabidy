@@ -69,6 +69,10 @@ impl Default for Player {
                         tx.send(player.elapsed())
                             .unwrap_or_else(|e| warn!("Send error {}", e));
                     }
+                    Ok(PlayerEngineCommand::SeekTo(time, tx)) => {
+                        tx.send(player.seek_to(time))
+                            .unwrap_or_else(|e| warn!("Send error {}", e));
+                    }
                     Ok(PlayerEngineCommand::GetVolume(tx)) => {
                         tx.send(player.volume())
                             .unwrap_or_else(|e| warn!("Send error {}", e));
@@ -124,6 +128,12 @@ impl Player {
     pub async fn duration(&self) -> Result<Duration> {
         let (tx, rx) = flume::bounded(1);
         self.tx_engine.send(PlayerEngineCommand::GetDuration(tx))?;
+        rx.recv_async().await?
+    }
+
+    pub async fn seek_to(&self, time: Duration) -> Result<Duration> {
+        let (tx, rx) = flume::bounded(1);
+        self.tx_engine.send(PlayerEngineCommand::SeekTo(time, tx))?;
         rx.recv_async().await?
     }
 
