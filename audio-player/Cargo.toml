@@ -1,0 +1,11 @@
+[package]
+name = "audio-player"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rodio = { version = "0.17.1", default-features = false, features = ["symphonia-all"] }
+symphonia = { version = "0.5.3", features = ["all"] }
+stream-download = { git = "https://github.com/aschey/stream-download-rs.git" }
+anyhow = "1.0.71"
+url = "2.4.0"
