@@ -11,10 +11,11 @@ use symphonia::{
         io::MediaSourceStream,
         meta::{MetadataOptions, MetadataRevision},
         probe::Hint,
-        units::{self, Time, TimeBase},
+        units::{Time, TimeBase},
     },
     default::get_probe,
 };
+use tracing::warn;
 
 use rodio::Source;
 
@@ -25,6 +26,7 @@ use crate::PlayerEngineCommand;
 // But a decode error in more than 3 consecutive packets is fatal.
 const MAX_DECODE_ERRORS: usize = 3;
 
+#[derive(Clone)]
 pub struct MediaInfo {
     pub duration: Option<Duration>,
     pub metadata: Option<MetadataRevision>,
@@ -97,7 +99,7 @@ impl SymphoniaDecoder {
             .map(|frames| track.codec_params.start_ts + frames)
             .unwrap_or_default();
 
-        let mut elapsed = 0;
+        let mut _elapsed = 0;
 
         let mut decoder = symphonia::default::get_codecs()
             .make(&track.codec_params, &DecoderOptions { verify: true })?;
@@ -105,7 +107,7 @@ impl SymphoniaDecoder {
         let mut decode_errors: usize = 0;
         let decoded = loop {
             let current_frame = probed.format.next_packet()?;
-            elapsed = current_frame.ts();
+            _elapsed = current_frame.ts();
             match decoder.decode(&current_frame) {
                 Ok(decoded) => break decoded,
                 Err(e) => match e {
@@ -142,7 +144,7 @@ impl SymphoniaDecoder {
             spec,
             time_base,
             duration,
-            elapsed,
+            elapsed: _elapsed,
             metadata,
             track,
             tx,
@@ -259,7 +261,9 @@ impl Iterator for SymphoniaDecoder {
                         if err.kind() == std::io::ErrorKind::UnexpectedEof
                             && err.to_string() == "end of stream"
                         {
-                            self.tx.send(PlayerEngineCommand::Eos);
+                            self.tx
+                                .send(PlayerEngineCommand::Eos)
+                                .unwrap_or_else(|e| warn!("Send error {}", e));
                             return None;
                         }
                     }
