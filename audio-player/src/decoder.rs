@@ -1,3 +1,4 @@
+use flume::Sender;
 use std::error::Error;
 use std::fmt;
 use std::time::Duration;
@@ -17,6 +18,8 @@ use symphonia::{
 
 use rodio::Source;
 
+use crate::PlayerEngineCommand;
+
 // Decoder errors are not considered fatal.
 // The correct action is to just get a new packet and try again.
 // But a decode error in more than 3 consecutive packets is fatal.
@@ -35,15 +38,20 @@ pub struct SymphoniaDecoder {
     buffer: SampleBuffer<i16>,
     spec: SignalSpec,
     time_base: Option<TimeBase>,
-    duration: Option<Duration>,
+    duration: u64,
     elapsed: u64,
     metadata: Option<MetadataRevision>,
     track: Track,
+    tx: Sender<PlayerEngineCommand>,
 }
 
 impl SymphoniaDecoder {
-    pub fn new(mss: MediaSourceStream, hint: Hint) -> Result<Self, DecoderError> {
-        match SymphoniaDecoder::init(mss, hint) {
+    pub fn new(
+        mss: MediaSourceStream,
+        hint: Hint,
+        tx: Sender<PlayerEngineCommand>,
+    ) -> Result<Self, DecoderError> {
+        match SymphoniaDecoder::init(mss, hint, tx) {
             Err(e) => match e {
                 SymphoniaError::IoError(e) => Err(DecoderError::IoError(e.to_string())),
                 SymphoniaError::DecodeError(e) => Err(DecoderError::DecodeError(e)),
@@ -66,6 +74,7 @@ impl SymphoniaDecoder {
     fn init(
         mss: MediaSourceStream,
         hint: Hint,
+        tx: Sender<PlayerEngineCommand>,
     ) -> symphonia::core::errors::Result<Option<SymphoniaDecoder>> {
         let format_opts: FormatOptions = FormatOptions {
             enable_gapless: true,
@@ -82,19 +91,11 @@ impl SymphoniaDecoder {
 
         let time_base = track.codec_params.time_base;
 
-        let dur = track
+        let duration = track
             .codec_params
             .n_frames
             .map(|frames| track.codec_params.start_ts + frames)
             .unwrap_or_default();
-
-        let duration = match time_base {
-            Some(tb) => {
-                let time = tb.calc_time(dur);
-                Some(Duration::from_secs_f64(time.seconds as f64 + time.frac))
-            }
-            None => None,
-        };
 
         let mut elapsed = 0;
 
@@ -144,13 +145,14 @@ impl SymphoniaDecoder {
             elapsed,
             metadata,
             track,
+            tx,
         }))
     }
 
     #[inline]
     pub fn media_info(&self) -> MediaInfo {
         MediaInfo {
-            duration: self.duration,
+            duration: self.total_duration(),
             metadata: self.metadata.clone(),
             track: self.track.clone(),
         }
@@ -217,7 +219,13 @@ impl Source for SymphoniaDecoder {
 
     #[inline]
     fn total_duration(&self) -> Option<Duration> {
-        self.duration
+        match self.time_base {
+            Some(tb) => {
+                let time = tb.calc_time(self.duration);
+                Some(Duration::from_secs_f64(time.seconds as f64 + time.frac))
+            }
+            None => None,
+        }
     }
 }
 
@@ -245,6 +253,14 @@ impl Iterator for SymphoniaDecoder {
                                 }
                                 _ => return None,
                             },
+                        }
+                    }
+                    Err(SymphoniaError::IoError(err)) => {
+                        if err.kind() == std::io::ErrorKind::UnexpectedEof
+                            && err.to_string() == "end of stream"
+                        {
+                            self.tx.send(PlayerEngineCommand::Eos);
+                            return None;
                         }
                     }
                     Err(_) => return None,

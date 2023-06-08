@@ -1,5 +1,4 @@
-mod decoder;
-
+use flume::{Receiver, Sender};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -8,8 +7,8 @@ use std::time::Duration;
 use symphonia::core::probe::Hint;
 use url::Url;
 
+use crate::decoder::{MediaInfo, SymphoniaDecoder};
 use anyhow::{anyhow, Result};
-use decoder::SymphoniaDecoder;
 use rodio::source::{PeriodicAccess, SineWave};
 use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 use stream_download::StreamDownload;
@@ -17,23 +16,42 @@ use symphonia::core::io::{
     MediaSource, MediaSourceStream, MediaSourceStreamOptions, ReadOnlySource,
 };
 
-struct Player {
-    sink: Option<Sink>,
-    stream: Option<OutputStream>,
+pub enum PlayerEngineCommand {
+    Play(String),
+    Pause,
+    Unpause,
+    TogglePlay,
+    Stop,
+    Eos,
+}
+
+// FIXME: sort out media info size (probably send pointers to stuff on the heap)
+pub enum PlayerMessage {
+    // MediaInfo(MediaInfo),
+    Duration(Duration),
+    Elapsed(Duration),
+    Stopped,
+    Paused,
+    Playing,
 }
 
 // TODO:
-// * Emit Metadata
-// * Emit duration
-// * Emit track data
-// * Emit EOS
 // * Emit buffering
 
-impl Player {
-    pub fn default() -> Self {
+pub struct PlayerEngine {
+    sink: Option<Sink>,
+    stream: Option<OutputStream>,
+    tx_engine: Sender<PlayerEngineCommand>,
+    tx_player: Sender<PlayerMessage>,
+}
+
+impl PlayerEngine {
+    pub fn new(tx_engine: Sender<PlayerEngineCommand>, tx_player: Sender<PlayerMessage>) -> Self {
         Self {
             sink: None,
             stream: None,
+            tx_engine,
+            tx_player,
         }
     }
 
@@ -43,16 +61,18 @@ impl Player {
         let (source, hint) = self.get_source(source_str)?;
         let mss = MediaSourceStream::new(source, MediaSourceStreamOptions::default());
 
-        let decoder = SymphoniaDecoder::new(mss, hint)?;
+        let tx_player = self.tx_player.clone();
+
+        let decoder = SymphoniaDecoder::new(mss, hint, self.tx_engine.clone())?;
 
         let media_info = decoder.media_info();
+        tx_player.send(PlayerMessage::Duration(
+            media_info.duration.unwrap_or_default(),
+        ));
+        // tx_player.send(PlayerEngineMessage::MediaInfo(media_info));
 
-        let decoder = decoder.periodic_access(Duration::from_millis(500), |src| {
-            println!("ELAPSED: {:?}", src.elapsed());
-
-            if src.elapsed().as_secs() > 10 {
-                src.seek(Duration::from_secs(2));
-            }
+        let decoder = decoder.periodic_access(Duration::from_millis(250), move |src| {
+            tx_player.send(PlayerMessage::Elapsed(src.elapsed()));
         });
 
         sink.append(decoder);
@@ -62,18 +82,33 @@ impl Player {
         // The sink is used to control the stream
         self.sink = Some(sink);
 
+        self.tx_player.send(PlayerMessage::Playing);
+
         Ok(())
     }
 
     pub fn pause(&mut self) {
         if let Some(sink) = &self.sink {
             sink.pause();
+            self.tx_player.send(PlayerMessage::Paused);
         }
     }
 
     pub fn unpause(&mut self) {
         if let Some(sink) = &self.sink {
             sink.play();
+            self.tx_player.send(PlayerMessage::Playing);
+        }
+    }
+
+    pub fn toggle_play(&mut self) {
+        if self.is_stopped() {
+            return;
+        }
+        if self.is_paused() {
+            self.unpause();
+        } else {
+            self.pause();
         }
     }
 
@@ -82,15 +117,15 @@ impl Player {
             sink.stop();
             self.sink.take();
             self.stream.take();
+            self.tx_player.send(PlayerMessage::Stopped);
         }
     }
 
-    pub fn is_playing(&self) -> bool {
-        self.sink.as_ref().map(|s| !s.is_paused()).unwrap_or(false)
-    }
-
     pub fn is_paused(&self) -> bool {
-        self.sink.as_ref().map(|s| s.is_paused()).unwrap_or(false)
+        self.sink
+            .as_ref()
+            .map(|s| s.is_paused())
+            .unwrap_or_default()
     }
 
     pub fn is_stopped(&self) -> bool {
@@ -129,13 +164,4 @@ impl Player {
         }
         hint
     }
-}
-
-fn main() {
-    let mut player = Player::default();
-    player.play("./Slip.m4a");
-
-    thread::sleep(Duration::from_millis(5000));
-
-    player.stop();
 }

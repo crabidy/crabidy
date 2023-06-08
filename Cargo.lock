@@ -175,6 +175,7 @@ name = "audio-player"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "flume",
  "rodio",
  "stream-download",
  "symphonia",
