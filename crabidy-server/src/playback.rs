@@ -1,24 +1,23 @@
 use crate::PlaybackMessage;
 use crate::ProviderMessage;
+use audio_player::Player;
 use crabidy_core::proto::crabidy::{
     get_update_stream_response::Update as StreamUpdate, InitResponse, PlayState, Queue, QueueTrack,
     Track, TrackPosition,
 };
 use crabidy_core::ProviderError;
-use gstreamer_play::{Play, PlayState as GstPlaystate, PlayVideoRenderer};
 use std::sync::Mutex;
 use tracing::debug_span;
 use tracing::{debug, error, instrument, trace, warn, Instrument};
 
-#[derive(Debug)]
 pub struct Playback {
     update_tx: tokio::sync::broadcast::Sender<StreamUpdate>,
     provider_tx: flume::Sender<ProviderMessage>,
     pub playback_tx: flume::Sender<PlaybackMessage>,
     playback_rx: flume::Receiver<PlaybackMessage>,
     queue: Mutex<Queue>,
-    state: Mutex<GstPlaystate>,
-    pub play: Play,
+    state: Mutex<PlayState>,
+    pub player: Player,
 }
 
 impl Playback {
@@ -32,8 +31,8 @@ impl Playback {
             current_position: 0,
             tracks: Vec::new(),
         });
-        let state = Mutex::new(GstPlaystate::Stopped);
-        let play = Play::new(None::<PlayVideoRenderer>);
+        let state = Mutex::new(PlayState::Stopped);
+        let player = Player::default();
         Self {
             update_tx,
             provider_tx,
@@ -41,13 +40,13 @@ impl Playback {
             playback_rx,
             queue,
             state,
-            play,
+            player,
         }
     }
-    #[instrument]
+
     pub fn run(self) {
         tokio::spawn(async move {
-            while let Ok(message) = self.playback_rx.recv_async().in_current_span().await {
+            while let Ok(message) = self.playback_rx.recv_async().await {
                 match message {
                     PlaybackMessage::Init { result_tx, span } => {
                         let _e = span.enter();
@@ -60,26 +59,19 @@ impl Playback {
                             };
                             trace!("queue_track {:?}", queue_track);
                             debug!("released queue_track lock");
+
                             let position = TrackPosition {
-                                duration: self
-                                    .play
-                                    .duration()
-                                    .map(|t| t.mseconds() as u32)
-                                    .unwrap_or(0),
-                                position: self
-                                    .play
-                                    .position()
-                                    .map(|t| t.mseconds() as u32)
-                                    .unwrap_or(0),
+                                duration: 0,
+                                position: 0,
                             };
                             trace!("position {:?}", position);
                             let play_state = {
                                 debug!("getting play state lock");
                                 match *self.state.lock().unwrap() {
-                                    GstPlaystate::Playing => PlayState::Playing,
-                                    GstPlaystate::Paused => PlayState::Paused,
-                                    GstPlaystate::Stopped => PlayState::Stopped,
-                                    GstPlaystate::Buffering => PlayState::Loading,
+                                    PlayState::Playing => PlayState::Playing,
+                                    PlayState::Paused => PlayState::Paused,
+                                    PlayState::Stopped => PlayState::Stopped,
+                                    PlayState::Loading => PlayState::Loading,
                                     _ => PlayState::Unspecified,
                                 }
                             };
@@ -89,8 +81,8 @@ impl Playback {
                                 queue: Some(queue.clone()),
                                 queue_track: Some(queue_track),
                                 play_state: play_state as i32,
-                                volume: self.play.volume() as f32,
-                                mute: self.play.is_muted(),
+                                volume: 0.0,
+                                mute: false,
                                 position: Some(position),
                             }
                         };
@@ -109,6 +101,7 @@ impl Playback {
                                 let tracks = self.flatten_node(&uuid).in_current_span().await;
                                 all_tracks.extend(tracks);
                             }
+                            debug!("uuid: {:?}", uuid);
                         }
                         trace!("got tracks {:?}", all_tracks);
                         let current = {
@@ -247,12 +240,14 @@ impl Playback {
                         let _e = span.enter();
                         debug!("toggling play");
                         {
-                            let state = self.state.lock().unwrap();
+                            let state = *self.state.lock().unwrap();
                             debug!("got state lock");
-                            if *state == GstPlaystate::Playing {
-                                self.play.pause();
-                            } else {
-                                self.play.play();
+                            if state == PlayState::Playing {
+                                if let Err(err) = self.player.pause().await {
+                                    error!("{:?}", err)
+                                }
+                            } else if let Err(err) = self.player.unpause().await {
+                                error!("{:?}", err)
                             }
                         }
                         debug!("state lock released");
@@ -261,23 +256,28 @@ impl Playback {
                     PlaybackMessage::Stop { span } => {
                         let _e = span.enter();
                         debug!("stopping");
-                        self.play.stop();
+                        if let Err(err) = self.player.stop().await {
+                            error!("{:?}", err)
+                        }
                     }
 
                     PlaybackMessage::ChangeVolume { delta, span } => {
                         let _e = span.enter();
                         debug!("changing volume");
-                        let volume = self.play.volume();
-                        debug!("got volume {:?}", volume);
-                        self.play.set_volume(volume + delta as f64);
+                        if let Ok(volume) = self.player.volume().await {
+                            debug!("got volume {:?}", volume);
+                            if let Err(err) = self.player.set_volume(volume + delta).await {
+                                error!("{:?}", err)
+                            };
+                        }
                     }
 
                     PlaybackMessage::ToggleMute { span } => {
                         let _e = span.enter();
                         debug!("toggling mute");
-                        let muted = self.play.is_muted();
-                        debug!("got muted {:?}", muted);
-                        self.play.set_mute(!muted);
+                        // let muted = self.player.is_muted();
+                        // debug!("got muted {:?}", muted);
+                        // self.player.set_mute(!muted);
                     }
 
                     PlaybackMessage::ToggleShuffle { span } => {
@@ -316,16 +316,8 @@ impl Playback {
                         debug!("state changed");
 
                         let play_state = {
-                            *self.state.lock().unwrap() = state.clone();
-                            debug!("got state lock");
-
-                            match state {
-                                GstPlaystate::Playing => PlayState::Playing,
-                                GstPlaystate::Paused => PlayState::Paused,
-                                GstPlaystate::Stopped => PlayState::Stopped,
-                                GstPlaystate::Buffering => PlayState::Loading,
-                                _ => PlayState::Unspecified,
-                            }
+                            *self.state.lock().unwrap() = state;
+                            state
                         };
                         debug!("released state lock and got play state {:?}", play_state);
                         let active_track_tx = self.update_tx.clone();
@@ -338,8 +330,9 @@ impl Playback {
                     PlaybackMessage::RestartTrack { span } => {
                         let _e = span.enter();
                         debug!("restarting track");
-                        self.play.stop();
-                        self.play.play();
+                        if let Err(err) = self.player.restart().await {
+                            error!("{:?}", err)
+                        }
                     }
 
                     PlaybackMessage::VolumeChanged { volume, span } => {
@@ -362,15 +355,14 @@ impl Playback {
                         }
                     }
 
-                    PlaybackMessage::PostitionChanged { position, span } => {
+                    PlaybackMessage::PostitionChanged {
+                        duration,
+                        position,
+                        span,
+                    } => {
                         let _e = span.enter();
                         trace!("position changed");
                         let update_tx = self.update_tx.clone();
-                        let duration = self
-                            .play
-                            .duration()
-                            .and_then(|t| Some(t.mseconds() as u32))
-                            .unwrap_or(0);
                         let update = StreamUpdate::Position(TrackPosition { duration, position });
                         if let Err(err) = update_tx.send(update) {
                             error!("{:?}", err)
@@ -404,6 +396,7 @@ impl Playback {
 
     #[instrument(skip(self))]
     async fn get_track(&self, uuid: &str) -> Result<Track, ProviderError> {
+        debug!("getting track");
         let tx = self.provider_tx.clone();
         let (result_tx, result_rx) = flume::bounded(1);
         let span = tracing::trace_span!("prov-chan");
@@ -474,11 +467,14 @@ impl Playback {
                     error!("{:?}", err)
                 }
             }
-            self.play.stop();
-            self.play.set_uri(Some(&urls[0]));
-            self.play.play();
-        } else {
-            self.play.stop();
+            if let Err(err) = self.player.stop().await {
+                error!("{:?}", err)
+            };
+            if let Err(err) = self.player.play(&urls[0]).await {
+                error!("{:?}", err)
+            };
+        } else if let Err(err) = self.player.stop().await {
+            error!("{:?}", err)
         }
     }
 
@@ -514,9 +510,12 @@ impl Playback {
                     error!("{:?}", err)
                 }
             }
-            self.play.stop();
-            self.play.set_uri(Some(&urls[0]));
-            self.play.play();
+            if let Err(err) = self.player.stop().await {
+                error!("{:?}", err)
+            };
+            if let Err(err) = self.player.play(&urls[0]).await {
+                error!("{:?}", err)
+            }
         }
     }
 }

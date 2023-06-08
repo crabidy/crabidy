@@ -17,10 +17,9 @@ pub struct ProviderOrchestrator {
 }
 
 impl ProviderOrchestrator {
-    #[instrument]
     pub fn run(self) {
         tokio::spawn(async move {
-            while let Ok(msg) = self.provider_rx.recv_async().in_current_span().await {
+            while let Ok(msg) = self.provider_rx.recv_async().await {
                 match msg {
                     ProviderMessage::GetLibraryNode {
                         uuid,
@@ -29,7 +28,11 @@ impl ProviderOrchestrator {
                     } => {
                         let _e = span.enter();
                         let result = self.get_lib_node(&uuid).in_current_span().await;
-                        result_tx.send(result).unwrap();
+                        result_tx
+                            .send_async(result)
+                            .in_current_span()
+                            .await
+                            .unwrap();
                     }
                     ProviderMessage::GetTrack {
                         uuid,
@@ -38,7 +41,11 @@ impl ProviderOrchestrator {
                     } => {
                         let _e = span.enter();
                         let result = self.get_metadata_for_track(&uuid).in_current_span().await;
-                        result_tx.send(result).unwrap();
+                        result_tx
+                            .send_async(result)
+                            .in_current_span()
+                            .await
+                            .unwrap();
                     }
                     ProviderMessage::GetTrackUrls {
                         uuid,
@@ -47,7 +54,11 @@ impl ProviderOrchestrator {
                     } => {
                         let _e = span.enter();
                         let result = self.get_urls_for_track(&uuid).in_current_span().await;
-                        result_tx.send(result).unwrap();
+                        result_tx
+                            .send_async(result)
+                            .in_current_span()
+                            .await
+                            .unwrap();
                     }
                     ProviderMessage::FlattenNode {
                         uuid,
@@ -56,7 +67,11 @@ impl ProviderOrchestrator {
                     } => {
                         let _e = span.enter();
                         let result = self.flatten_node(&uuid).in_current_span().await;
-                        result_tx.send(result).unwrap();
+                        result_tx
+                            .send_async(result)
+                            .in_current_span()
+                            .await
+                            .unwrap();
                     }
                 }
             }
@@ -132,6 +147,7 @@ impl ProviderClient for ProviderOrchestrator {
     }
     #[instrument(skip(self))]
     async fn get_metadata_for_track(&self, track_uuid: &str) -> Result<Track, ProviderError> {
+        debug!("get_metadata_for_track");
         self.tidal_client
             .get_metadata_for_track(track_uuid)
             .in_current_span()

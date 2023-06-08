@@ -1,8 +1,8 @@
+use audio_player::PlayerMessage;
 use crabidy_core::proto::crabidy::{
-    crabidy_service_server::CrabidyServiceServer, InitResponse, LibraryNode, Track,
+    crabidy_service_server::CrabidyServiceServer, InitResponse, LibraryNode, PlayState, Track,
 };
 use crabidy_core::{ProviderClient, ProviderError};
-use gstreamer_play::{PlayMessage, PlayState as GstPlaystate};
 use tracing::{debug_span, info, instrument, warn, Span};
 use tracing_subscriber::{filter::Targets, prelude::*};
 
@@ -36,19 +36,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::subscriber::set_global_default(registry)
         .expect("Setting the default tracing subscriber failed");
 
-    gstreamer::init()?;
-    info!("gstreamer initialized");
+    info!("audio player started initialized");
 
     let (update_tx, _) = tokio::sync::broadcast::channel(2048);
     let orchestrator = ProviderOrchestrator::init("").await.unwrap();
 
     let playback = Playback::new(update_tx.clone(), orchestrator.provider_tx.clone());
 
-    let bus = playback.play.message_bus();
     let playback_tx = playback.playback_tx.clone();
+    let player_msg = playback.player.messages.clone();
 
     std::thread::spawn(|| {
-        poll_play_bus(bus, playback_tx);
+        poll_play_bus(player_msg, playback_tx);
     });
     info!("gstreamer bus handler started");
 
@@ -71,44 +70,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[instrument(skip(bus, tx))]
-fn poll_play_bus(bus: gstreamer::Bus, tx: flume::Sender<PlaybackMessage>) {
-    for msg in bus.iter_timed(gstreamer::ClockTime::NONE) {
+#[instrument(skip(rx, tx))]
+fn poll_play_bus(rx: flume::Receiver<PlayerMessage>, tx: flume::Sender<PlaybackMessage>) {
+    for msg in rx.iter() {
         let span = debug_span!("play-chan");
-        match PlayMessage::parse(&msg) {
-            Ok(PlayMessage::EndOfStream) => {
+        match msg {
+            PlayerMessage::EndOfStream => {
                 tx.send(PlaybackMessage::Next { span }).unwrap();
             }
-            Ok(PlayMessage::StateChanged { state }) => {
-                tx.send(PlaybackMessage::StateChanged { state, span })
-                    .unwrap();
+            PlayerMessage::Stopped => {
+                tx.send(PlaybackMessage::StateChanged {
+                    state: PlayState::Stopped,
+                    span,
+                })
+                .unwrap();
             }
-            Ok(PlayMessage::PositionUpdated { position }) => {
-                let position = position
-                    .and_then(|t| Some(t.mseconds() as u32))
-                    .unwrap_or(0);
-                tx.send(PlaybackMessage::PostitionChanged { position, span })
-                    .unwrap();
+            PlayerMessage::Paused => {
+                tx.send(PlaybackMessage::StateChanged {
+                    state: PlayState::Paused,
+                    span,
+                })
+                .unwrap();
             }
-            Ok(PlayMessage::Buffering { percent: _ }) => {}
-            Ok(PlayMessage::VolumeChanged { volume }) => {
-                let volume = volume as f32;
-                tx.send(PlaybackMessage::VolumeChanged { volume, span })
-                    .unwrap();
+            PlayerMessage::Playing => {
+                tx.send(PlaybackMessage::StateChanged {
+                    state: PlayState::Playing,
+                    span,
+                })
+                .unwrap();
             }
-            Ok(PlayMessage::MuteChanged { muted }) => {
-                tx.send(PlaybackMessage::MuteChanged { muted, span })
-                    .unwrap();
+            PlayerMessage::Elapsed { duration, elapsed } => {
+                tx.send(PlaybackMessage::PostitionChanged {
+                    duration: duration.as_millis() as u32,
+                    position: elapsed.as_millis() as u32,
+                    span,
+                })
+                .unwrap();
             }
-
-            Ok(PlayMessage::MediaInfoUpdated { info: _ }) => {}
-            Ok(PlayMessage::UriLoaded) => {}
-            Ok(PlayMessage::VideoDimensionsChanged {
-                width: _,
-                height: _,
-            }) => {}
-            Ok(PlayMessage::DurationChanged { duration: _ }) => {}
-            _ => println!("Unknown message: {:?}", msg),
+            PlayerMessage::Duration { duration } => {
+                tx.send(PlaybackMessage::PostitionChanged {
+                    duration: duration.as_millis() as u32,
+                    position: 0,
+                    span,
+                })
+                .unwrap();
+            }
         }
     }
 }
@@ -194,7 +200,7 @@ pub enum PlaybackMessage {
         span: Span,
     },
     StateChanged {
-        state: GstPlaystate,
+        state: PlayState,
         span: Span,
     },
     VolumeChanged {
@@ -207,6 +213,7 @@ pub enum PlaybackMessage {
         span: Span,
     },
     PostitionChanged {
+        duration: u32,
         position: u32,
         span: Span,
     },

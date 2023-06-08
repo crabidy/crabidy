@@ -62,7 +62,7 @@ impl CrabidyService for RpcService {
             .await
             .map_err(|e| {
                 error!("{:?}", e);
-                return Status::internal("Failed to receive response from provider channel");
+                Status::internal("Failed to receive response from provider channel")
             })?;
         Ok(Response::new(response))
     }
