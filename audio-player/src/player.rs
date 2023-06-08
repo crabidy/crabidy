@@ -134,9 +134,8 @@ impl Player {
 
     pub async fn set_volume(&self, volume: f32) -> Result<f32> {
         let (tx, rx) = flume::bounded(1);
-        let vol = volume.clamp(0.0, 1.1);
         self.tx_engine
-            .send(PlayerEngineCommand::SetVolume(vol, tx))?;
+            .send(PlayerEngineCommand::SetVolume(volume, tx))?;
         rx.recv_async().await?
     }
 

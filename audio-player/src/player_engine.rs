@@ -210,7 +210,7 @@ impl PlayerEngine {
 
     pub fn set_volume(&mut self, volume: f32) -> Result<f32> {
         if let Some(sink) = &self.sink {
-            sink.set_volume(volume);
+            sink.set_volume(volume.clamp(0.0, 1.1));
             return Ok(sink.volume());
         }
         Err(PlayerEngineError::NotPlaying.into())
