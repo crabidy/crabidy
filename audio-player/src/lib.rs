@@ -15,6 +15,8 @@ use player_engine::{PlayerEngine, PlayerEngineCommand};
 // * Emit buffering
 // * Emit errors
 
+pub enum PlayerError {}
+
 pub struct Player {
     pub messages: Receiver<PlayerMessage>,
     tx_engine: Sender<PlayerEngineCommand>,
@@ -32,8 +34,9 @@ impl Default for Player {
             let mut player = PlayerEngine::new(tx_decoder, tx_player);
             loop {
                 match rx_engine.recv() {
-                    Ok(PlayerEngineCommand::Play(source_str)) => {
-                        player.play(&source_str);
+                    Ok(PlayerEngineCommand::Play(source_str, tx)) => {
+                        let res = player.play(&source_str);
+                        tx.send(res);
                     }
                     Ok(PlayerEngineCommand::Pause) => {
                         player.pause();
@@ -67,9 +70,34 @@ impl Default for Player {
 impl Player {
     // FIXME: this could check if the player started playing using a channel
     // Then it would be async (wait for Playing for example)
-    pub async fn play(&self, source_str: &str) -> Result<()> {
+    pub async fn play(&self, source_str: &str) -> Result<MediaInfo> {
+        let (tx, rx) = flume::bounded(1);
         self.tx_engine
-            .send(PlayerEngineCommand::Play(source_str.to_string()));
+            .send(PlayerEngineCommand::Play(source_str.to_string(), tx));
+        if let Ok(res) = rx.recv_async().await {
+            return res;
+        }
+        // FIXME: add error type
+        Err(anyhow!("Player channel error"))
+    }
+
+    pub async fn elpased(&self) -> Duration {
+        // FIXME: implement
+        Duration::default()
+    }
+
+    pub async fn duration(&self) -> Duration {
+        // FIXME: implement
+        Duration::default()
+    }
+
+    pub async fn volume(&self) -> f32 {
+        // FIXME: implement
+        0.0
+    }
+
+    pub async fn set_volume(&self) -> Result<()> {
+        // FIXME: implement
         Ok(())
     }
 
@@ -90,6 +118,11 @@ impl Player {
 
     pub async fn stop(&self) -> Result<()> {
         self.tx_engine.send(PlayerEngineCommand::Stop);
+        Ok(())
+    }
+
+    pub async fn restart(&self) -> Result<()> {
+        // FIXME: implement
         Ok(())
     }
 }

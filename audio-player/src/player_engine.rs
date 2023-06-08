@@ -17,7 +17,7 @@ use symphonia::core::io::{
 };
 
 pub enum PlayerEngineCommand {
-    Play(String),
+    Play(String, Sender<Result<MediaInfo>>),
     Pause,
     Unpause,
     TogglePlay,
@@ -56,26 +56,23 @@ impl PlayerEngine {
         }
     }
 
-    pub fn play(&mut self, source_str: &str) -> Result<()> {
+    pub fn play(&mut self, source_str: &str) -> Result<MediaInfo> {
+        let tx_player = self.tx_player.clone();
+
         let (stream, handle) = OutputStream::try_default()?;
         let mut sink = Sink::try_new(&handle)?;
         let (source, hint) = self.get_source(source_str)?;
         let mss = MediaSourceStream::new(source, MediaSourceStreamOptions::default());
-
-        let tx_player = self.tx_player.clone();
-
         let decoder = SymphoniaDecoder::new(mss, hint, self.tx_engine.clone())?;
-
         let media_info = decoder.media_info();
+
         tx_player.send(PlayerMessage::Duration(
             media_info.duration.unwrap_or_default(),
         ));
-        // tx_player.send(PlayerEngineMessage::MediaInfo(media_info));
 
         let decoder = decoder.periodic_access(Duration::from_millis(250), move |src| {
             tx_player.send(PlayerMessage::Elapsed(src.elapsed()));
         });
-
         sink.append(decoder);
 
         // We need to keep the stream around, otherwise it gets dropped outside of this scope
@@ -85,7 +82,7 @@ impl PlayerEngine {
 
         self.tx_player.send(PlayerMessage::Playing);
 
-        Ok(())
+        Ok(media_info)
     }
 
     pub fn pause(&mut self) {

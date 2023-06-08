@@ -10,3 +10,4 @@ stream-download = { git = "https://github.com/aschey/stream-download-rs.git" }
 anyhow = "1.0.71"
 url = "2.4.0"
 flume = "0.10.14"
+thiserror = "1.0.40"
