@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use flume::{Receiver, Sender};
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::decoder::MediaInfo;
 use crate::player_engine::{PlayerEngine, PlayerEngineCommand, PlayerMessage};
@@ -27,7 +27,14 @@ impl Default for Player {
         let tx_decoder = tx_engine.clone();
 
         thread::spawn(move || {
-            let mut player = PlayerEngine::new(tx_decoder, tx_player);
+            let mut player = match PlayerEngine::init(tx_decoder, tx_player) {
+                Err(e) => {
+                    error!("Could not initialize player: {}", e);
+                    return;
+                }
+                Ok(engine) => engine,
+            };
+
             loop {
                 match rx_engine.recv() {
                     Ok(PlayerEngineCommand::Play(source_str, tx)) => {
@@ -123,7 +130,7 @@ impl Player {
     pub async fn volume(&self) -> Result<f32> {
         let (tx, rx) = flume::bounded(1);
         self.tx_engine.send(PlayerEngineCommand::GetVolume(tx))?;
-        rx.recv_async().await?
+        Ok(rx.recv_async().await?)
     }
 
     pub async fn is_paused(&self) -> Result<bool> {
@@ -136,7 +143,7 @@ impl Player {
         let (tx, rx) = flume::bounded(1);
         self.tx_engine
             .send(PlayerEngineCommand::SetVolume(volume, tx))?;
-        rx.recv_async().await?
+        Ok(rx.recv_async().await?)
     }
 
     pub async fn pause(&self) -> Result<()> {

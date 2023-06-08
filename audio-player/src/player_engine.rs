@@ -17,7 +17,7 @@ use thiserror::Error;
 
 pub enum PlayerEngineCommand {
     Play(String, Sender<Result<MediaInfo>>),
-    SetVolume(f32, Sender<Result<f32>>),
+    SetVolume(f32, Sender<f32>),
     Pause(Sender<Result<()>>),
     Unpause(Sender<Result<()>>),
     TogglePlay(Sender<Result<bool>>),
@@ -25,7 +25,7 @@ pub enum PlayerEngineCommand {
     Stop(Sender<Result<()>>),
     GetDuration(Sender<Result<Duration>>),
     GetElapsed(Sender<Result<Duration>>),
-    GetVolume(Sender<Result<f32>>),
+    GetVolume(Sender<f32>),
     GetPaused(Sender<Result<bool>>),
     Eos,
     SetElapsed(Duration),
@@ -54,8 +54,9 @@ pub struct PlayerEngine {
     // Might do that using seeking in the future
     current_source: Option<String>,
     media_info: Option<MediaInfo>,
-    sink: Option<Sink>,
-    stream: Option<OutputStream>,
+    sink: Sink,
+    // We need to keep the stream around as it will stop playing when it's dropped
+    _stream: OutputStream,
     tx_engine: Sender<PlayerEngineCommand>,
     tx_player: Sender<PlayerMessage>,
 }
@@ -67,24 +68,31 @@ pub enum PlayerEngineError {
 }
 
 impl PlayerEngine {
-    pub fn new(tx_engine: Sender<PlayerEngineCommand>, tx_player: Sender<PlayerMessage>) -> Self {
-        Self {
+    pub fn init(
+        tx_engine: Sender<PlayerEngineCommand>,
+        tx_player: Sender<PlayerMessage>,
+    ) -> Result<Self> {
+        let (_stream, handle) = OutputStream::try_default()?;
+        let sink = Sink::try_new(&handle)?;
+        Ok(Self {
             current_source: None,
             media_info: None,
             elapsed: Duration::default(),
-            sink: None,
-            stream: None,
+            sink,
+            _stream,
             tx_engine,
             tx_player,
-        }
+        })
     }
 
     pub fn play(&mut self, source_str: &str) -> Result<MediaInfo> {
         let tx_player = self.tx_player.clone();
         let tx_engine = self.tx_engine.clone();
 
-        let (stream, handle) = OutputStream::try_default()?;
-        let sink = Sink::try_new(&handle)?;
+        if !self.sink.empty() {
+            self.reset();
+        }
+
         let (source, hint) = self.get_source(source_str)?;
         let mss = MediaSourceStream::new(source, MediaSourceStreamOptions::default());
         let decoder = SymphoniaDecoder::new(mss, hint, self.tx_engine.clone())?;
@@ -110,12 +118,9 @@ impl PlayerEngine {
                 .send(PlayerMessage::Elapsed { elapsed, duration })
                 .unwrap_or_else(|e| warn!("Send error {}", e));
         });
-        sink.append(decoder);
 
-        // We need to keep the stream around, otherwise it gets dropped outside of this scope
-        self.stream = Some(stream);
-        // The sink is used to control the stream
-        self.sink = Some(sink);
+        self.sink.append(decoder);
+        self.sink.play();
 
         self.tx_player
             .send(PlayerMessage::Playing)
@@ -126,49 +131,51 @@ impl PlayerEngine {
 
     pub fn restart(&mut self) -> Result<MediaInfo> {
         if let Some(source) = self.current_source.clone() {
-            self.reset()?;
             return self.play(&source);
         }
         Err(PlayerEngineError::NotPlaying.into())
     }
 
     pub fn pause(&mut self) -> Result<()> {
-        if let Some(sink) = &self.sink {
-            sink.pause();
-            self.tx_player
-                .send(PlayerMessage::Paused)
-                .unwrap_or_else(|e| warn!("Send error {}", e));
-            return Ok(());
+        if self.is_stopped() {
+            return Err(PlayerEngineError::NotPlaying.into());
         }
-        Err(PlayerEngineError::NotPlaying.into())
+        self.sink.pause();
+        self.tx_player
+            .send(PlayerMessage::Paused)
+            .unwrap_or_else(|e| warn!("Send error {}", e));
+        Ok(())
     }
 
     pub fn unpause(&mut self) -> Result<()> {
-        if let Some(sink) = &self.sink {
-            sink.play();
-            self.tx_player
-                .send(PlayerMessage::Playing)
-                .unwrap_or_else(|e| warn!("Send error {}", e));
-            return Ok(());
+        if self.is_stopped() {
+            return Err(PlayerEngineError::NotPlaying.into());
         }
-        Err(PlayerEngineError::NotPlaying.into())
+        self.sink.play();
+        self.tx_player
+            .send(PlayerMessage::Playing)
+            .unwrap_or_else(|e| warn!("Send error {}", e));
+        Ok(())
     }
 
     pub fn toggle_play(&mut self) -> Result<bool> {
-        if let Some(sink) = &self.sink {
-            if sink.is_paused() {
-                sink.play();
-                return Ok(true);
-            } else {
-                sink.pause();
-                return Ok(false);
-            }
+        if self.is_stopped() {
+            return Err(PlayerEngineError::NotPlaying.into());
         }
-        Err(PlayerEngineError::NotPlaying.into())
+        if self.sink.is_paused() {
+            self.sink.play();
+            Ok(true)
+        } else {
+            self.sink.pause();
+            Ok(false)
+        }
     }
 
     pub fn stop(&mut self) -> Result<()> {
-        self.reset()?;
+        if self.is_stopped() {
+            return Err(PlayerEngineError::NotPlaying.into());
+        }
+        self.reset();
         self.tx_player
             .send(PlayerMessage::Stopped)
             .unwrap_or_else(|e| warn!("Send error {}", e));
@@ -176,15 +183,14 @@ impl PlayerEngine {
     }
 
     pub fn is_paused(&self) -> Result<bool> {
-        self.sink
-            .as_ref()
-            .map_or(Err(PlayerEngineError::NotPlaying.into()), |s| {
-                Ok(s.is_paused())
-            })
+        if self.is_stopped() {
+            return Err(PlayerEngineError::NotPlaying.into());
+        }
+        Ok(self.sink.is_paused())
     }
 
     pub fn is_stopped(&self) -> bool {
-        self.sink.is_none()
+        self.sink.len() == 0
     }
 
     pub fn duration(&self) -> Result<Duration> {
@@ -202,25 +208,17 @@ impl PlayerEngine {
         Ok(self.elapsed)
     }
 
-    pub fn volume(&self) -> Result<f32> {
-        self.sink.as_ref().map_or(
-            Err(PlayerEngineError::NotPlaying.into()),
-            |s| Ok(s.volume()),
-        )
+    pub fn volume(&self) -> f32 {
+        self.sink.volume()
     }
 
-    pub fn set_volume(&mut self, volume: f32) -> Result<f32> {
-        if let Some(sink) = &self.sink {
-            sink.set_volume(volume.clamp(0.0, 1.1));
-            return Ok(sink.volume());
-        }
-        Err(PlayerEngineError::NotPlaying.into())
+    pub fn set_volume(&mut self, volume: f32) -> f32 {
+        self.sink.set_volume(volume.clamp(0.0, 1.1));
+        self.sink.volume()
     }
 
     pub fn handle_eos(&mut self) {
-        self.reset().unwrap_or_else(|e| {
-            warn!("Sink error {}", e);
-        });
+        self.reset();
         self.tx_player
             .send(PlayerMessage::EndOfStream)
             .unwrap_or_else(|e| warn!("Send error {}", e));
@@ -230,16 +228,11 @@ impl PlayerEngine {
         self.elapsed = elapsed;
     }
 
-    fn reset(&mut self) -> Result<()> {
+    fn reset(&mut self) {
         self.elapsed = Duration::default();
         self.current_source = None;
-        if let Some(sink) = &self.sink {
-            sink.stop();
-            self.sink.take();
-            self.stream.take();
-            return Ok(());
-        }
-        Err(PlayerEngineError::NotPlaying.into())
+        self.sink.pause();
+        self.sink.clear();
     }
 
     fn get_source(&self, source_str: &str) -> Result<(Box<dyn MediaSource>, Hint)> {
