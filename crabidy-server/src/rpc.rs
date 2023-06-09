@@ -103,7 +103,7 @@ impl CrabidyService for RpcService {
         &self,
         request: tonic::Request<QueueRequest>,
     ) -> std::result::Result<tonic::Response<QueueResponse>, tonic::Status> {
-        let uuids = request.into_inner().uuid.clone();
+        let uuids = request.into_inner().uuids.clone();
         Span::current().record("uuids", format!("{:?}", uuids));
         debug!("Received queue request");
         let playback_tx = self.playback_tx.clone();
@@ -123,7 +123,7 @@ impl CrabidyService for RpcService {
         &self,
         request: tonic::Request<ReplaceRequest>,
     ) -> std::result::Result<tonic::Response<ReplaceResponse>, tonic::Status> {
-        let uuids = request.into_inner().uuid.clone();
+        let uuids = request.into_inner().uuids.clone();
         Span::current().record("uuids", format!("{:?}", uuids));
         debug!("Received replace request");
         let playback_tx = self.playback_tx.clone();
@@ -142,7 +142,7 @@ impl CrabidyService for RpcService {
         &self,
         request: tonic::Request<AppendRequest>,
     ) -> std::result::Result<tonic::Response<AppendResponse>, tonic::Status> {
-        let uuids = request.into_inner().uuid.clone();
+        let uuids = request.into_inner().uuids.clone();
         Span::current().record("uuids", format!("{:?}", uuids));
         debug!("Received append request");
         let playback_tx = self.playback_tx.clone();
@@ -181,7 +181,7 @@ impl CrabidyService for RpcService {
         request: tonic::Request<InsertRequest>,
     ) -> std::result::Result<tonic::Response<InsertResponse>, tonic::Status> {
         let req = request.into_inner();
-        let uuids = req.uuid.clone();
+        let uuids = req.uuids.clone();
         let position = req.position;
         Span::current().record("uuids", format!("{:?}", uuids));
         Span::current().record("position", position);
