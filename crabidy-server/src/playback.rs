@@ -1,6 +1,7 @@
 use crate::PlaybackMessage;
 use crate::ProviderMessage;
 use audio_player::Player;
+use crabidy_core::proto::crabidy::QueueModifiers;
 use crabidy_core::proto::crabidy::{
     get_update_stream_response::Update as StreamUpdate, InitResponse, PlayState, QueueTrack, Track,
     TrackPosition,
@@ -47,9 +48,13 @@ impl Playback {
                 match message {
                     PlaybackMessage::Init { result_tx, span } => {
                         let _e = span.enter();
+                        let repeat;
+                        let shuffle;
                         let response = {
                             let queue = self.queue.lock().unwrap();
                             debug!("got queue lock");
+                            repeat = queue.repeat;
+                            shuffle = queue.shuffle;
                             let queue_track = QueueTrack {
                                 queue_position: queue.current_position() as u32,
                                 track: queue.current_track(),
@@ -81,6 +86,7 @@ impl Playback {
                                 volume: 0.0,
                                 mute: false,
                                 position: Some(position),
+                                mods: Some(QueueModifiers { repeat, shuffle }),
                             }
                         };
                         trace!("response {:?}", response);
@@ -235,24 +241,48 @@ impl Playback {
                     PlaybackMessage::ToggleShuffle { span } => {
                         let _e = span.enter();
                         debug!("toggling shuffle");
-                        let mut queue = self.queue.lock().unwrap();
-                        debug!("got queue lock");
-                        if queue.shuffle {
-                            queue.shuffle_on()
-                        } else {
-                            queue.shuffle_off()
+                        let shuffle;
+                        let repeat;
+                        {
+                            let mut queue = self.queue.lock().unwrap();
+                            debug!("got queue lock");
+                            shuffle = queue.shuffle;
+                            repeat = queue.repeat;
+                            if queue.shuffle {
+                                queue.shuffle_on()
+                            } else {
+                                queue.shuffle_off()
+                            }
+                        }
+                        debug!("queue lock released");
+                        let queue_update_tx = self.update_tx.clone();
+                        let update = StreamUpdate::Mods(QueueModifiers { shuffle, repeat });
+                        if let Err(err) = queue_update_tx.send(update) {
+                            error!("{:?}", err)
                         }
                     }
 
                     PlaybackMessage::ToggleRepeat { span } => {
                         let _e = span.enter();
                         debug!("toggling repeat");
-                        let mut queue = self.queue.lock().unwrap();
-                        debug!("got queue lock");
-                        if queue.repeat {
-                            queue.repeat = false
-                        } else {
-                            queue.repeat = true
+                        let shuffle;
+                        let repeat;
+                        {
+                            let mut queue = self.queue.lock().unwrap();
+                            debug!("got queue lock");
+                            shuffle = queue.shuffle;
+                            repeat = queue.repeat;
+                            if queue.repeat {
+                                queue.repeat = false
+                            } else {
+                                queue.repeat = true
+                            }
+                        }
+                        debug!("queue lock released");
+                        let queue_update_tx = self.update_tx.clone();
+                        let update = StreamUpdate::Mods(QueueModifiers { shuffle, repeat });
+                        if let Err(err) = queue_update_tx.send(update) {
+                            error!("{:?}", err)
                         }
                     }
 
