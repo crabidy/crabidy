@@ -31,7 +31,7 @@ use std::{
     collections::HashMap,
     error::Error,
     fmt, io,
-    ops::Div,
+    ops::{Div, IndexMut},
     println, thread,
     time::{Duration, Instant},
     vec,
@@ -46,7 +46,9 @@ const COLOR_PRIMARY: Color = Color::Rgb(129, 161, 193);
 // const COLOR_PRIMARY_DARK: Color = Color::Rgb(94, 129, 172);
 const COLOR_PRIMARY_DARK: Color = Color::Rgb(59, 66, 82);
 const COLOR_SECONDARY: Color = Color::Rgb(180, 142, 173);
-// const COLOR_RED: Color = Color::Rgb(191, 97, 106);
+const COLOR_RED: Color = Color::Rgb(191, 97, 106);
+const COLOR_GREEN: Color = Color::Rgb(163, 190, 140);
+// const COLOR_ORANGE: Color = Color::Rgb(208, 135, 112);
 // const COLOR_BRIGHT: Color = Color::Rgb(216, 222, 233);
 
 trait ListView {
@@ -162,6 +164,8 @@ struct UiItem {
     uuid: String,
     title: String,
     kind: UiItemKind,
+    marked: bool,
+    is_queable: bool,
 }
 
 struct QueueView {
@@ -197,12 +201,10 @@ impl QueueView {
             self.tx.send(MessageFromUi::SetCurrentTrack(pos));
         }
     }
-    fn insert_track(&mut self) {
-        todo!();
-    }
     fn remove_track(&mut self) {
         if let Some(pos) = self.selected() {
-            self.tx.send(MessageFromUi::RemoveTrack(pos));
+            // FIXME: mark multiple tracks on queue and remove them
+            self.tx.send(MessageFromUi::RemoveTracks(vec![pos]));
         }
     }
     fn update_position(&mut self, pos: usize) {
@@ -218,6 +220,8 @@ impl QueueView {
                 uuid: t.uuid.clone(),
                 title: format!("{} - {}", t.artist, t.title),
                 kind: UiItemKind::Track,
+                marked: false,
+                is_queable: false,
             })
             .collect();
 
@@ -256,9 +260,18 @@ impl ListView for LibraryView {
 }
 
 impl LibraryView {
-    fn get_selected(&self) -> Option<&UiItem> {
+    fn get_selected(&self) -> Option<Vec<String>> {
+        if self.list.iter().any(|i| i.marked) {
+            return Some(
+                self.list
+                    .iter()
+                    .filter(|i| i.marked)
+                    .map(|i| i.uuid.to_string())
+                    .collect(),
+            );
+        }
         if let Some(idx) = self.list_state.selected() {
-            return Some(&self.list[idx]);
+            return Some(vec![self.list[idx].uuid.to_string()]);
         }
         None
     }
@@ -268,7 +281,8 @@ impl LibraryView {
         }
     }
     fn dive(&mut self) {
-        if let Some(item) = self.get_selected() {
+        if let Some(idx) = self.list_state.selected() {
+            let item = &self.list[idx];
             if let UiItemKind::Node = item.kind {
                 self.tx
                     .send(MessageFromUi::GetLibraryNode(item.uuid.clone()));
@@ -276,22 +290,56 @@ impl LibraryView {
         }
     }
     fn queue_append(&mut self) {
-        if let Some(item) = self.get_selected() {
-            self.tx.send(MessageFromUi::AppendTrack(item.uuid.clone()));
+        if let Some(items) = self.get_selected() {
+            match self.tx.send(MessageFromUi::AppendTracks(items)) {
+                Ok(_) => self.remove_marks(),
+                Err(_) => { /* FIXME: warn */ }
+            }
         }
     }
     fn queue_queue(&mut self) {
-        if let Some(item) = self.get_selected() {
-            self.tx.send(MessageFromUi::QueueTrack(item.uuid.clone()));
+        if let Some(items) = self.get_selected() {
+            match self.tx.send(MessageFromUi::QueueTracks(items)) {
+                Ok(_) => self.remove_marks(),
+                Err(_) => { /* FIXME: warn */ }
+            }
         }
     }
     fn queue_replace(&mut self) {
-        if let Some(item) = self.get_selected() {
-            self.tx.send(MessageFromUi::ReplaceQueue(item.uuid.clone()));
+        if let Some(items) = self.get_selected() {
+            match self.tx.send(MessageFromUi::ReplaceQueue(items)) {
+                Ok(_) => self.remove_marks(),
+                Err(_) => { /* FIXME: warn */ }
+            }
+        }
+    }
+    fn queue_insert(&mut self, pos: usize) {
+        if let Some(items) = self.get_selected() {
+            match self.tx.send(MessageFromUi::InsertTracks(items, pos)) {
+                Ok(_) => self.remove_marks(),
+                Err(_) => { /* FIXME: warn */ }
+            }
         }
     }
     fn prev_selected(&self) -> usize {
         *self.positions.get(&self.uuid).unwrap_or(&0)
+    }
+    fn toggle_mark(&mut self) {
+        if let Some(idx) = self.list_state.selected() {
+            let mut item = &mut self.list[idx];
+            if !item.is_queable {
+                return;
+            }
+            item.marked = !item.marked;
+        }
+    }
+    fn remove_marks(&mut self) {
+        if self.list.iter().any(|i| i.marked) {
+            self.list
+                .iter_mut()
+                .filter(|i| i.marked)
+                .for_each(|i| i.marked = false);
+        }
     }
     fn update(&mut self, node: LibraryNode) {
         if node.tracks.is_empty() && node.children.is_empty() {
@@ -312,6 +360,8 @@ impl LibraryView {
                     uuid: t.uuid.clone(),
                     title: format!("{} - {}", t.artist, t.title),
                     kind: UiItemKind::Track,
+                    marked: false,
+                    is_queable: true,
                 })
                 .collect();
         } else {
@@ -323,6 +373,8 @@ impl LibraryView {
                     uuid: c.uuid.clone(),
                     title: c.title.clone(),
                     kind: UiItemKind::Node,
+                    marked: false,
+                    is_queable: c.is_queable,
                 })
                 .collect();
         }
@@ -416,11 +468,11 @@ enum MessageToUi {
 // FIXME: Rename this
 enum MessageFromUi {
     GetLibraryNode(String),
-    AppendTrack(String),
-    QueueTrack(String),
-    InsertTrack(String, usize),
-    RemoveTrack(usize),
-    ReplaceQueue(String),
+    AppendTracks(Vec<String>),
+    QueueTracks(Vec<String>),
+    InsertTracks(Vec<String>, usize),
+    RemoveTracks(Vec<usize>),
+    ReplaceQueue(Vec<String>),
     NextTrack,
     PrevTrack,
     RestartTrack,
@@ -443,20 +495,20 @@ async fn poll(
                         tx.send(MessageToUi::ReplaceLibraryNode(node.clone()));
                     }
                 },
-                MessageFromUi::AppendTrack(uuid) => {
-                    rpc_client.append_track(&uuid).await?
+                MessageFromUi::AppendTracks(uuids) => {
+                    rpc_client.append_tracks(uuids).await?
                 }
-                MessageFromUi::QueueTrack(uuid) => {
-                    rpc_client.queue_track(&uuid).await?
+                MessageFromUi::QueueTracks(uuids) => {
+                    rpc_client.queue_tracks(uuids).await?
                 }
-                MessageFromUi::InsertTrack(uuid, pos) => {
-                    rpc_client.insert_track(&uuid, pos).await?
+                MessageFromUi::InsertTracks(uuids, pos) => {
+                    rpc_client.insert_tracks(uuids, pos).await?
                 }
-                MessageFromUi::RemoveTrack(pos) => {
-                    rpc_client.remove_track(pos).await?
+                MessageFromUi::RemoveTracks(positions) => {
+                    rpc_client.remove_tracks(positions).await?
                 }
-                MessageFromUi::ReplaceQueue(uuid) => {
-                    rpc_client.replace_queue(&uuid).await?
+                MessageFromUi::ReplaceQueue(uuids) => {
+                    rpc_client.replace_queue(uuids).await?
                 }
                 MessageFromUi::NextTrack => {
                     rpc_client.next_track().await?
@@ -502,7 +554,7 @@ async fn poll(
 async fn orchestrate<'a>(
     (tx, rx): (Sender<MessageToUi>, Receiver<MessageFromUi>),
 ) -> Result<(), Box<dyn Error>> {
-    let mut rpc_client = rpc::RpcClient::connect("http://192.168.178.32:50051").await?;
+    let mut rpc_client = rpc::RpcClient::connect("http://192.168.1.149:50051").await?;
 
     if let Some(root_node) = rpc_client.get_library_node("node:/").await? {
         tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
@@ -599,7 +651,7 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         (_, KeyModifiers::NONE, KeyCode::Char(' ')) => {
                             tx.send(MessageFromUi::TogglePlay);
                         }
-                        (_, KeyModifiers::NONE, KeyCode::Char('p')) => {
+                        (_, KeyModifiers::NONE, KeyCode::Char('r')) => {
                             tx.send(MessageFromUi::RestartTrack);
                         }
                         (_, KeyModifiers::SHIFT, KeyCode::Char('J')) => {
@@ -649,6 +701,14 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         }
                         (UiFocus::Library, KeyModifiers::NONE, KeyCode::Enter) => {
                             app.library.queue_replace();
+                        }
+                        (UiFocus::Library, KeyModifiers::NONE, KeyCode::Char('s')) => {
+                            app.library.toggle_mark();
+                        }
+                        (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('p')) => {
+                            if let Some(selected) = app.queue.selected() {
+                                app.library.queue_insert(selected);
+                            }
                         }
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('g')) => {
                             app.queue.first();
@@ -711,7 +771,21 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .library
         .list
         .iter()
-        .map(|i| ListItem::new(Span::from(i.title.to_string())))
+        .map(|i| {
+            let text = if i.marked {
+                format!("* {}", i.title)
+            } else {
+                i.title.to_string()
+            };
+            let style = if i.marked {
+                Style::default()
+                    .fg(COLOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            return ListItem::new(Span::from(text)).style(style);
+        })
         .collect();
 
     let library_list = List::new(library_items)
@@ -750,13 +824,14 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .enumerate()
         .map(|(idx, item)| {
             let active = idx == app.queue.current_position;
+
             let title = if active {
                 format!("> {}", item.title)
             } else {
                 item.title.to_string()
             };
             let style = if active {
-                Style::default().add_modifier(Modifier::BOLD)
+                Style::default().fg(COLOR_RED).add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };

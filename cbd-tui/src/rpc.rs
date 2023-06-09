@@ -104,43 +104,41 @@ impl RpcClient {
         Err(Box::new(RpcClientError::NotFound))
     }
 
-    pub async fn append_track(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
-        let append_request = Request::new(AppendRequest {
-            uuid: vec![uuid.to_string()],
-        });
+    pub async fn append_tracks(&mut self, uuids: Vec<String>) -> Result<(), Box<dyn Error>> {
+        let append_request = Request::new(AppendRequest { uuids });
         self.client.append(append_request).await?;
         Ok(())
     }
 
-    pub async fn queue_track(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
-        let queue_request = Request::new(QueueRequest {
-            uuid: vec![uuid.to_string()],
-        });
+    pub async fn queue_tracks(&mut self, uuids: Vec<String>) -> Result<(), Box<dyn Error>> {
+        let queue_request = Request::new(QueueRequest { uuids });
         self.client.queue(queue_request).await?;
         Ok(())
     }
 
-    pub async fn insert_track(&mut self, uuid: &str, pos: usize) -> Result<(), Box<dyn Error>> {
+    pub async fn insert_tracks(
+        &mut self,
+        uuids: Vec<String>,
+        pos: usize,
+    ) -> Result<(), Box<dyn Error>> {
         let insert_request = Request::new(InsertRequest {
-            uuid: vec![uuid.to_string()],
+            uuids,
             position: pos as u32,
         });
         self.client.insert(insert_request).await?;
         Ok(())
     }
 
-    pub async fn remove_track(&mut self, pos: usize) -> Result<(), Box<dyn Error>> {
+    pub async fn remove_tracks(&mut self, positions: Vec<usize>) -> Result<(), Box<dyn Error>> {
         let remove_request = Request::new(RemoveRequest {
-            positions: vec![pos as u32],
+            positions: positions.iter().map(|p| *p as u32).collect(),
         });
         self.client.remove(remove_request).await?;
         Ok(())
     }
 
-    pub async fn replace_queue(&mut self, uuid: &str) -> Result<(), Box<dyn Error>> {
-        let replace_request = Request::new(ReplaceRequest {
-            uuid: vec![uuid.to_string()],
-        });
+    pub async fn replace_queue(&mut self, uuids: Vec<String>) -> Result<(), Box<dyn Error>> {
+        let replace_request = Request::new(ReplaceRequest { uuids });
         self.client.replace(replace_request).await?;
         Ok(())
     }
