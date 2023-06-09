@@ -30,7 +30,9 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     error::Error,
-    fmt, io, println, thread,
+    fmt, io,
+    ops::Div,
+    println, thread,
     time::{Duration, Instant},
     vec,
 };
@@ -334,9 +336,9 @@ impl LibraryView {
 }
 
 struct NowPlayingView {
-    completion: Option<u32>,
-    elapsed: Option<f64>,
     play_state: PlayState,
+    duration: Option<Duration>,
+    position: Option<Duration>,
     track: Option<Track>,
 }
 
@@ -345,8 +347,8 @@ impl NowPlayingView {
         self.play_state = play_state;
     }
     fn update_position(&mut self, pos: TrackPosition) {
-        self.completion = Some(pos.position / 1000);
-        self.elapsed = Some(pos.position as f64 / pos.duration as f64);
+        self.position = Some(Duration::from_millis(pos.position.into()));
+        self.duration = Some(Duration::from_millis(pos.duration.into()));
     }
     fn update_track(&mut self, active: Option<Track>) {
         if let Some(track) = &active {
@@ -386,9 +388,9 @@ impl App {
             tx,
         };
         let now_playing = NowPlayingView {
-            completion: None,
-            elapsed: None,
             play_state: PlayState::Unspecified,
+            duration: None,
+            position: None,
             track: None,
         };
         App {
@@ -839,32 +841,54 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     f.render_widget(media_info_p, now_playing_layout[0]);
 
-    let elapsed_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(10), Constraint::Max(15)])
-        .split(now_playing_layout[1]);
+    if let (Some(position), Some(duration), Some(track)) = (
+        app.now_playing.position,
+        app.now_playing.duration,
+        &app.now_playing.track,
+    ) {
+        let pos = position.as_secs();
+        let dur = duration.as_secs();
 
-    if let (Some(elapsed), Some(track)) = (app.now_playing.elapsed, &app.now_playing.track) {
+        let completion_size = if dur < 3600 { 12 } else { 15 };
+
+        let elapsed_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(10), Constraint::Max(completion_size)])
+            .split(now_playing_layout[1]);
+
+        let ratio = if duration.is_zero() {
+            0.0
+        } else {
+            position.as_secs_f64().div(duration.as_secs_f64())
+        };
+
         let progress = LineGauge::default()
             .label("")
             .block(Block::default().borders(Borders::NONE))
             .gauge_style(Style::default().fg(COLOR_SECONDARY).bg(Color::Black))
-            .ratio(elapsed);
+            .ratio(ratio);
         f.render_widget(progress, elapsed_layout[0]);
 
-        let c = app.now_playing.completion.unwrap_or(0);
-        let l = track.duration.unwrap_or(0);
-        let completion = format!(
-            "{:0>1}:{:0>2}:{:0>2}/{:0>1}:{:0>2}:{:0>2}",
-            (c / 60 / 60),
-            (c / 60) % 60,
-            c % 60,
-            (l / 60 / 60),
-            (l / 60) % 60,
-            l % 60
-        );
+        let pos_min = (pos / 60) % 60;
+        let pos_secs = pos % 60;
+        let dur_min = (dur / 60) % 60;
+        let dur_secs = dur % 60;
 
-        let time_text = Span::raw(completion);
+        let completion_text = if dur < 3600 {
+            format!(
+                "{:0>2}:{:0>2}/{:0>2}:{:0>2}",
+                pos_min, pos_secs, dur_min, dur_secs,
+            )
+        } else {
+            let pos_hours = pos_secs / 60 / 60;
+            let dur_hours = dur_secs / 60 / 60;
+            format!(
+                "{:0>1}:{:0>2}:{:0>2}/{:0>1}:{:0>2}:{:0>2}",
+                pos_hours, pos_min, pos_secs, dur_hours, dur_min, dur_secs,
+            )
+        };
+
+        let time_text = Span::raw(completion_text);
         let time_p = Paragraph::new(Spans::from(time_text));
         f.render_widget(time_p, elapsed_layout[1]);
     }
