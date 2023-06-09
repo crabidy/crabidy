@@ -34,11 +34,12 @@ service CrabidyService {
 message InitRequest {}
 message InitResponse {
   Queue queue = 1;
-  QueueTrack queue_track = 2;
-  PlayState play_state = 3;
-  float volume = 4;
-  bool mute = 5;
-  TrackPosition position = 6;
+  QueueModifiers mods = 2;
+  QueueTrack queue_track = 3;
+  PlayState play_state = 4;
+  float volume = 5;
+  bool mute = 6;
+  TrackPosition position = 7;
 }
 
 // Library
@@ -97,11 +98,12 @@ message GetUpdateStreamRequest {}
 message GetUpdateStreamResponse {
   oneof update {
     Queue queue = 1;
-    QueueTrack queue_track = 2;
-    PlayState play_state = 3;
-    float volume = 4;
-    bool mute = 5;
-    TrackPosition position = 6;
+    QueueModifiers mods = 2;
+    QueueTrack queue_track = 3;
+    PlayState play_state = 4;
+    float volume = 5;
+    bool mute = 6;
+    TrackPosition position = 7;
   }
 }
 
@@ -135,13 +137,16 @@ message LibraryNodeChild {
   string title = 2;
 }
 
+message QueueModifiers {
+  bool shuffle = 1;
+  bool repeat = 2;
+}
+
 message Queue {
   uint64 timestamp = 1;
   uint32 current_position = 2;
   // Without album
   repeated Track tracks = 3;
-  bool shuffle = 4;
-  bool repeat = 5;
 }
 
 message QueueTrack {
