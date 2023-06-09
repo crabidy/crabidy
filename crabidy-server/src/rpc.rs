@@ -8,7 +8,7 @@ use crabidy_core::proto::crabidy::{
     ReplaceRequest, ReplaceResponse, RestartTrackRequest, RestartTrackResponse, SaveQueueRequest,
     SaveQueueResponse, SetCurrentRequest, SetCurrentResponse, StopRequest, StopResponse,
     ToggleMuteRequest, ToggleMuteResponse, TogglePlayRequest, TogglePlayResponse,
-    ToggleShuffleRequest, ToggleShuffleResponse,
+    ToggleRepeatRequest, ToggleRepeatResponse, ToggleShuffleRequest, ToggleShuffleResponse,
 };
 use futures::TryStreamExt;
 use std::pin::Pin;
@@ -221,6 +221,40 @@ impl CrabidyService for RpcService {
     }
 
     #[instrument(skip(self, _request))]
+    async fn toggle_shuffle(
+        &self,
+        _request: tonic::Request<ToggleShuffleRequest>,
+    ) -> std::result::Result<tonic::Response<ToggleShuffleResponse>, tonic::Status> {
+        debug!("Received toggle_shuffle request");
+        let playback_tx = self.playback_tx.clone();
+        let span = debug_span!("play-chan");
+        playback_tx
+            .send_async(PlaybackMessage::ToggleShuffle { span })
+            .in_current_span()
+            .await
+            .unwrap();
+        let reply = ToggleShuffleResponse {};
+        Ok(Response::new(reply))
+    }
+
+    #[instrument(skip(self, _request))]
+    async fn toggle_repeat(
+        &self,
+        _request: tonic::Request<ToggleRepeatRequest>,
+    ) -> std::result::Result<tonic::Response<ToggleRepeatResponse>, tonic::Status> {
+        debug!("Received toggle_shuffle request");
+        let playback_tx = self.playback_tx.clone();
+        let span = debug_span!("play-chan");
+        playback_tx
+            .send_async(PlaybackMessage::ToggleRepeat { span })
+            .in_current_span()
+            .await
+            .unwrap();
+        let reply = ToggleRepeatResponse {};
+        Ok(Response::new(reply))
+    }
+
+    #[instrument(skip(self, _request))]
     async fn get_update_stream(
         &self,
         _request: tonic::Request<GetUpdateStreamRequest>,
@@ -269,23 +303,6 @@ impl CrabidyService for RpcService {
             .await
             .unwrap();
         let reply = TogglePlayResponse {};
-        Ok(Response::new(reply))
-    }
-
-    #[instrument(skip(self, _request))]
-    async fn toggle_shuffle(
-        &self,
-        _request: tonic::Request<ToggleShuffleRequest>,
-    ) -> std::result::Result<tonic::Response<ToggleShuffleResponse>, tonic::Status> {
-        debug!("Received toggle_shuffle request");
-        let playback_tx = self.playback_tx.clone();
-        let span = debug_span!("play-chan");
-        playback_tx
-            .send_async(PlaybackMessage::ToggleShuffle { span })
-            .in_current_span()
-            .await
-            .unwrap();
-        let reply = ToggleShuffleResponse {};
         Ok(Response::new(reply))
     }
 

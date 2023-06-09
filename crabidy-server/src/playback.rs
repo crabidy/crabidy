@@ -2,10 +2,11 @@ use crate::PlaybackMessage;
 use crate::ProviderMessage;
 use audio_player::Player;
 use crabidy_core::proto::crabidy::{
-    get_update_stream_response::Update as StreamUpdate, InitResponse, PlayState, Queue, QueueTrack,
-    Track, TrackPosition,
+    get_update_stream_response::Update as StreamUpdate, InitResponse, PlayState, QueueTrack, Track,
+    TrackPosition,
 };
 use crabidy_core::ProviderError;
+use crabidy_server::QueueManager;
 use std::sync::Mutex;
 use tracing::debug_span;
 use tracing::{debug, error, instrument, trace, warn, Instrument};
@@ -15,7 +16,7 @@ pub struct Playback {
     provider_tx: flume::Sender<ProviderMessage>,
     pub playback_tx: flume::Sender<PlaybackMessage>,
     playback_rx: flume::Receiver<PlaybackMessage>,
-    queue: Mutex<Queue>,
+    queue: Mutex<QueueManager>,
     state: Mutex<PlayState>,
     pub player: Player,
 }
@@ -26,11 +27,7 @@ impl Playback {
         provider_tx: flume::Sender<ProviderMessage>,
     ) -> Self {
         let (playback_tx, playback_rx) = flume::bounded(10);
-        let queue = Mutex::new(Queue {
-            timestamp: 0,
-            current_position: 0,
-            tracks: Vec::new(),
-        });
+        let queue = Mutex::new(QueueManager::new());
         let state = Mutex::new(PlayState::Stopped);
         let player = Player::default();
         Self {
@@ -54,7 +51,7 @@ impl Playback {
                             let queue = self.queue.lock().unwrap();
                             debug!("got queue lock");
                             let queue_track = QueueTrack {
-                                queue_position: queue.current_position,
+                                queue_position: queue.current_position() as u32,
                                 track: queue.current_track(),
                             };
                             trace!("queue_track {:?}", queue_track);
@@ -78,7 +75,7 @@ impl Playback {
                             trace!("play_state {:?}", play_state);
                             debug!("released play state lock");
                             InitResponse {
-                                queue: Some(queue.clone()),
+                                queue: Some(queue.clone().into()),
                                 queue_track: Some(queue_track),
                                 play_state: play_state as i32,
                                 volume: 0.0,
@@ -108,9 +105,8 @@ impl Playback {
                             let mut queue = self.queue.lock().unwrap();
                             debug!("got queue lock");
                             queue.replace_with_tracks(&all_tracks);
-                            queue.set_current_position(0);
                             let queue_update_tx = self.update_tx.clone();
-                            let update = StreamUpdate::Queue(queue.clone());
+                            let update = StreamUpdate::Queue(queue.clone().into());
                             queue_update_tx.send(update).unwrap();
                             queue.current_track()
                         };
@@ -138,7 +134,7 @@ impl Playback {
                             debug!("got queue lock");
                             queue.queue_tracks(&all_tracks);
                             let queue_update_tx = self.update_tx.clone();
-                            let update = StreamUpdate::Queue(queue.clone());
+                            let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
                                 error!("{:?}", err)
                             }
@@ -166,7 +162,7 @@ impl Playback {
                             debug!("got queue lock");
                             queue.append_tracks(&all_tracks);
                             let queue_update_tx = self.update_tx.clone();
-                            let update = StreamUpdate::Queue(queue.clone());
+                            let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
                                 error!("{:?}", err)
                             }
@@ -182,7 +178,7 @@ impl Playback {
                             debug!("got queue lock");
                             let track = queue.remove_tracks(&positions);
                             let queue_update_tx = self.update_tx.clone();
-                            let update = StreamUpdate::Queue(queue.clone());
+                            let update = StreamUpdate::Queue(queue.clone().into());
                             queue_update_tx.send(update).unwrap();
                             track
                         };
@@ -214,7 +210,7 @@ impl Playback {
                             debug!("got queue lock");
                             queue.insert_tracks(position, &all_tracks);
                             let queue_update_tx = self.update_tx.clone();
-                            let update = StreamUpdate::Queue(queue.clone());
+                            let update = StreamUpdate::Queue(queue.clone().into());
                             queue_update_tx.send(update).unwrap();
                         }
                         debug!("queue lock released");
@@ -234,6 +230,30 @@ impl Playback {
                         };
                         debug!("quue lock released and  got current {:?}", track);
                         self.play(track).in_current_span().await;
+                    }
+
+                    PlaybackMessage::ToggleShuffle { span } => {
+                        let _e = span.enter();
+                        debug!("toggling shuffle");
+                        let mut queue = self.queue.lock().unwrap();
+                        debug!("got queue lock");
+                        if queue.shuffle {
+                            queue.shuffle_on()
+                        } else {
+                            queue.shuffle_off()
+                        }
+                    }
+
+                    PlaybackMessage::ToggleRepeat { span } => {
+                        let _e = span.enter();
+                        debug!("toggling repeat");
+                        let mut queue = self.queue.lock().unwrap();
+                        debug!("got queue lock");
+                        if queue.repeat {
+                            queue.repeat = false
+                        } else {
+                            queue.repeat = true
+                        }
                     }
 
                     PlaybackMessage::TogglePlay { span } => {
@@ -278,12 +298,6 @@ impl Playback {
                         // let muted = self.player.is_muted();
                         // debug!("got muted {:?}", muted);
                         // self.player.set_mute(!muted);
-                    }
-
-                    PlaybackMessage::ToggleShuffle { span } => {
-                        let _e = span.enter();
-                        debug!("toggling shuffle");
-                        todo!()
                     }
 
                     PlaybackMessage::Next { span } => {
@@ -460,7 +474,7 @@ impl Playback {
                 let queue_update_tx = self.update_tx.clone();
                 let track = queue.current_track();
                 let update = StreamUpdate::QueueTrack(QueueTrack {
-                    queue_position: queue.current_position,
+                    queue_position: queue.current_position() as u32,
                     track,
                 });
                 if let Err(err) = queue_update_tx.send(update) {
@@ -500,7 +514,7 @@ impl Playback {
                 let queue_update_tx = self.update_tx.clone();
                 let track = queue.current_track();
                 let update = StreamUpdate::QueueTrack(QueueTrack {
-                    queue_position: queue.current_position,
+                    queue_position: queue.current_position() as u32,
                     track,
                 });
                 if let Err(err) = queue_update_tx.send(update) {

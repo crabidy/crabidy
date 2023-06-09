@@ -174,10 +174,13 @@ pub enum PlaybackMessage {
         position: u32,
         span: Span,
     },
-    TogglePlay {
+    ToggleShuffle {
         span: Span,
     },
-    ToggleShuffle {
+    ToggleRepeat {
+        span: Span,
+    },
+    TogglePlay {
         span: Span,
     },
     Stop {

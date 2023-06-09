@@ -15,6 +15,8 @@ service CrabidyService {
   rpc Remove(RemoveRequest) returns (RemoveResponse);
   rpc Insert(InsertRequest) returns (InsertResponse);
   rpc SetCurrent(SetCurrentRequest) returns (SetCurrentResponse);
+  rpc ToggleShuffle(ToggleShuffleRequest) returns (ToggleShuffleResponse);
+  rpc ToggleRepeat(ToggleRepeatRequest) returns (ToggleRepeatResponse);
   rpc GetUpdateStream(GetUpdateStreamRequest) returns (stream GetUpdateStreamResponse);
   rpc SaveQueue(SaveQueueRequest) returns (SaveQueueResponse);
 
@@ -23,7 +25,6 @@ service CrabidyService {
   rpc Stop(StopRequest) returns (StopResponse);
   rpc ChangeVolume(ChangeVolumeRequest) returns (ChangeVolumeResponse);
   rpc ToggleMute(ToggleMuteRequest) returns (ToggleMuteResponse);
-  rpc ToggleShuffle(ToggleShuffleRequest) returns (ToggleShuffleResponse);
   rpc Next(NextRequest) returns (NextResponse);
   rpc Prev(PrevRequest) returns (PrevResponse);
   rpc RestartTrack(RestartTrackRequest) returns (RestartTrackResponse);
@@ -80,6 +81,12 @@ message SetCurrentRequest {
 }
 message SetCurrentResponse {}
 
+message ToggleShuffleRequest {}
+message ToggleShuffleResponse {}
+
+message ToggleRepeatRequest {}
+message ToggleRepeatResponse {}
+
 message SaveQueueRequest {
   string name = 1;
 }
@@ -113,9 +120,6 @@ message ChangeVolumeResponse {}
 message ToggleMuteRequest {}
 message ToggleMuteResponse {}
 
-message ToggleShuffleRequest {}
-message ToggleShuffleResponse {}
-
 message NextRequest {}
 message NextResponse {}
 
@@ -136,6 +140,8 @@ message Queue {
   uint32 current_position = 2;
   // Without album
   repeated Track tracks = 3;
+  bool shuffle = 4;
+  bool repeat = 5;
 }
 
 message QueueTrack {
