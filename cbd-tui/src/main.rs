@@ -187,14 +187,10 @@ impl ListView for QueueView {
 
 impl QueueView {
     fn play_next(&self) {
-        if self.current_position < self.get_size() - 1 {
-            self.tx.send(MessageFromUi::NextTrack);
-        }
+        self.tx.send(MessageFromUi::NextTrack);
     }
     fn play_prev(&self) {
-        if self.current_position > 0 {
-            self.tx.send(MessageFromUi::PrevTrack);
-        }
+        self.tx.send(MessageFromUi::PrevTrack);
     }
     fn play_selected(&self) {
         if let Some(pos) = self.selected() {
