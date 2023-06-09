@@ -135,6 +135,7 @@ message RestartTrackResponse {}
 message LibraryNodeChild {
   string uuid = 1;
   string title = 2;
+  bool is_queable = 3;
 }
 
 message QueueModifiers {
