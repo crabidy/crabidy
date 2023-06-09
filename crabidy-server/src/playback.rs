@@ -189,7 +189,10 @@ impl Playback {
                             track
                         };
                         debug!("queue lock released");
-                        self.play(track).in_current_span().await;
+                        let state = *self.state.lock().unwrap();
+                        if state == PlayState::Playing {
+                            self.play(track).in_current_span().await;
+                        }
                     }
 
                     PlaybackMessage::Insert {
