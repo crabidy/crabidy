@@ -345,7 +345,7 @@ impl NowPlayingView {
         self.play_state = play_state;
     }
     fn update_position(&mut self, pos: TrackPosition) {
-        self.completion = Some(pos.position);
+        self.completion = Some(pos.position / 1000);
         self.elapsed = Some(pos.position as f64 / pos.duration as f64);
     }
     fn update_track(&mut self, active: Option<Track>) {
