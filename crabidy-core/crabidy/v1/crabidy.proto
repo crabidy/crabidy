@@ -51,17 +51,17 @@ message GetLibraryNodeResponse {
 
 // Queue
 message QueueRequest {
-  repeated string uuid = 1;
+  repeated string uuids = 1;
 }
 message QueueResponse {}
 
 message ReplaceRequest {
-  repeated string uuid = 1;
+  repeated string uuids = 1;
 }
 message ReplaceResponse {}
 
 message AppendRequest {
-  repeated string uuid = 1;
+  repeated string uuids = 1;
 }
 message AppendResponse {}
 
@@ -72,7 +72,7 @@ message RemoveResponse {}
 
 message InsertRequest {
   uint32 position = 1;
-  repeated string uuid = 2;
+  repeated string uuids = 2;
 }
 message InsertResponse {}
 
