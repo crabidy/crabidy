@@ -46,8 +46,12 @@ impl LibraryNode {
 }
 
 impl LibraryNodeChild {
-    pub fn new(uuid: String, title: String) -> Self {
-        Self { uuid, title }
+    pub fn new(uuid: String, title: String, is_queable: bool) -> Self {
+        Self {
+            uuid,
+            title,
+            is_queable,
+        }
     }
 }
 

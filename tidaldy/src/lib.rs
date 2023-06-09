@@ -80,6 +80,7 @@ impl crabidy_core::ProviderClient for Client {
         let children = vec![crabidy_core::proto::crabidy::LibraryNodeChild::new(
             "node:userplaylists".to_string(),
             "playlists".to_string(),
+            false,
         )];
         crabidy_core::proto::crabidy::LibraryNode {
             uuid: "node:tidal".to_string(),
@@ -118,6 +119,7 @@ impl crabidy_core::ProviderClient for Client {
                     let child = crabidy_core::proto::crabidy::LibraryNodeChild::new(
                         format!("node:playlist:{}", playlist.playlist.uuid),
                         playlist.playlist.title,
+                        true,
                     );
                     node.children.push(child);
                 }

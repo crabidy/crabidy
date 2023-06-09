@@ -156,7 +156,7 @@ impl ProviderClient for ProviderOrchestrator {
     #[instrument(skip(self))]
     fn get_lib_root(&self) -> LibraryNode {
         let mut root_node = LibraryNode::new();
-        let child = LibraryNodeChild::new("node:tidal".to_owned(), "tidal".to_owned());
+        let child = LibraryNodeChild::new("node:tidal".to_owned(), "tidal".to_owned(), false);
         root_node.children.push(child);
         root_node
     }
