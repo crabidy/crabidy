@@ -3,7 +3,8 @@ mod rpc;
 use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient,
     get_update_stream_response::Update as StreamUpdate, GetLibraryNodeRequest,
-    InitResponse as InitialData, LibraryNode, PlayState, Queue, QueueTrack, Track, TrackPosition,
+    InitResponse as InitialData, LibraryNode, PlayState, Queue, QueueModifiers, QueueTrack, Track,
+    TrackPosition,
 };
 
 use crossterm::{
@@ -386,6 +387,7 @@ impl LibraryView {
 struct NowPlayingView {
     play_state: PlayState,
     duration: Option<Duration>,
+    modifiers: QueueModifiers,
     position: Option<Duration>,
     track: Option<Track>,
 }
@@ -408,6 +410,9 @@ impl NowPlayingView {
                 .unwrap();
         }
         self.track = active;
+    }
+    fn update_modifiers(&mut self, mods: &QueueModifiers) {
+        self.modifiers = mods.clone();
     }
 }
 
@@ -438,6 +443,7 @@ impl App {
         let now_playing = NowPlayingView {
             play_state: PlayState::Unspecified,
             duration: None,
+            modifiers: QueueModifiers::default(),
             position: None,
             track: None,
         };
@@ -480,6 +486,8 @@ enum MessageFromUi {
     TogglePlay,
     ChangeVolume(f32),
     ToggleMute,
+    ToggleShuffle,
+    ToggleRepeat,
 }
 
 async fn poll(
@@ -530,6 +538,12 @@ async fn poll(
                 }
                 MessageFromUi::ToggleMute => {
                     rpc_client.toggle_mute().await?
+                }
+                MessageFromUi::ToggleShuffle => {
+                    rpc_client.toggle_shuffle().await?
+                }
+                MessageFromUi::ToggleRepeat => {
+                    rpc_client.toggle_repeat().await?
                 }
             }
         }
@@ -614,6 +628,9 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                     if let Some(ps) = PlayState::from_i32(init_data.play_state) {
                         app.now_playing.update_play_state(ps);
                     }
+                    if let Some(mods) = init_data.mods {
+                        app.now_playing.update_modifiers(&mods);
+                    }
                 }
                 MessageToUi::Update(update) => match update {
                     StreamUpdate::Queue(queue) => {
@@ -629,7 +646,11 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                             app.now_playing.update_play_state(ps);
                         }
                     }
-                    _ => {}
+                    StreamUpdate::Mods(mods) => {
+                        app.now_playing.update_modifiers(&mods);
+                    }
+                    StreamUpdate::Mute(_) => { /* FIXME: implement */ }
+                    StreamUpdate::Volume(_) => { /* FIXME: implement */ }
                 },
             }
         }
@@ -662,6 +683,12 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         }
                         (_, KeyModifiers::NONE, KeyCode::Char('m')) => {
                             tx.send(MessageFromUi::ToggleMute);
+                        }
+                        (_, KeyModifiers::NONE, KeyCode::Char('z')) => {
+                            tx.send(MessageFromUi::ToggleShuffle);
+                        }
+                        (_, KeyModifiers::NONE, KeyCode::Char('x')) => {
+                            tx.send(MessageFromUi::ToggleRepeat);
                         }
                         (_, KeyModifiers::CONTROL, KeyCode::Char('n')) => {
                             app.queue.play_next();
@@ -875,8 +902,12 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             Some(album) => album.title.to_string(),
             None => "No album".to_string(),
         };
+        let mods = format!(
+            "Shuffle: {}, Repeat {}",
+            &app.now_playing.modifiers.shuffle, &app.now_playing.modifiers.repeat
+        );
         vec![
-            Spans::from(Span::raw("")),
+            Spans::from(Span::raw(mods)),
             Spans::from(Span::raw(play_text)),
             Spans::from(vec![
                 Span::styled(

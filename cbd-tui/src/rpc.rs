@@ -4,7 +4,7 @@ use crabidy_core::proto::crabidy::{
     GetUpdateStreamRequest, GetUpdateStreamResponse, InitRequest, InitResponse, InsertRequest,
     LibraryNode, NextRequest, PrevRequest, QueueRequest, RemoveRequest, ReplaceRequest,
     RestartTrackRequest, SetCurrentRequest, SetCurrentResponse, ToggleMuteRequest,
-    TogglePlayRequest, TogglePlayResponse,
+    TogglePlayRequest, TogglePlayResponse, ToggleRepeatRequest, ToggleShuffleRequest,
 };
 
 use std::{
@@ -21,6 +21,7 @@ use tonic::{
     Request, Streaming,
 };
 
+// FIXME: use anyhow + thiserror
 #[derive(Debug)]
 enum RpcClientError {
     NotFound,
@@ -172,6 +173,18 @@ impl RpcClient {
     pub async fn toggle_play(&mut self) -> Result<(), Box<dyn Error>> {
         let toggle_play_request = Request::new(TogglePlayRequest {});
         self.client.toggle_play(toggle_play_request).await?;
+        Ok(())
+    }
+
+    pub async fn toggle_shuffle(&mut self) -> Result<(), Box<dyn Error>> {
+        let toggle_shuffle_request = Request::new(ToggleShuffleRequest {});
+        self.client.toggle_shuffle(toggle_shuffle_request).await?;
+        Ok(())
+    }
+
+    pub async fn toggle_repeat(&mut self) -> Result<(), Box<dyn Error>> {
+        let toggle_repeat_request = Request::new(ToggleRepeatRequest {});
+        self.client.toggle_repeat(toggle_repeat_request).await?;
         Ok(())
     }
 
