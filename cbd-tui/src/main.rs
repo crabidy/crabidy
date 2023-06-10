@@ -1,5 +1,7 @@
+mod config;
 mod rpc;
 
+use config::Config;
 use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient,
     get_update_stream_response::Update as StreamUpdate, GetLibraryNodeRequest,
@@ -16,6 +18,8 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use flume::{Receiver, Sender};
+use lazy_static::lazy_static;
+use notify_rust::Notification;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Corner, Direction, Layout},
@@ -41,8 +45,6 @@ use tokio::{fs, select, signal, task};
 use tokio_stream::StreamExt;
 use tonic::{transport::Channel, Request, Status, Streaming};
 
-use notify_rust::Notification;
-
 const COLOR_PRIMARY: Color = Color::Rgb(129, 161, 193);
 // const COLOR_PRIMARY_DARK: Color = Color::Rgb(94, 129, 172);
 const COLOR_PRIMARY_DARK: Color = Color::Rgb(59, 66, 82);
@@ -51,6 +53,11 @@ const COLOR_RED: Color = Color::Rgb(191, 97, 106);
 const COLOR_GREEN: Color = Color::Rgb(163, 190, 140);
 // const COLOR_ORANGE: Color = Color::Rgb(208, 135, 112);
 // const COLOR_BRIGHT: Color = Color::Rgb(216, 222, 233);
+
+// FIXME: is lazy-static needed here??
+lazy_static! {
+    static ref CONFIG: Config = config::init();
+}
 
 trait ListView {
     fn get_size(&self) -> usize;
@@ -566,9 +573,10 @@ async fn poll(
 }
 
 async fn orchestrate<'a>(
+    config: &'static Config,
     (tx, rx): (Sender<MessageToUi>, Receiver<MessageFromUi>),
 ) -> Result<(), Box<dyn Error>> {
-    let mut rpc_client = rpc::RpcClient::connect("http://192.168.1.149:50051").await?;
+    let mut rpc_client = rpc::RpcClient::connect(&config.server.address).await?;
 
     if let Some(root_node) = rpc_client.get_library_node("node:/").await? {
         tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
@@ -588,7 +596,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx, ui_rx): (Sender<MessageToUi>, Receiver<MessageToUi>) = flume::unbounded();
 
     // FIXME: unwrap
-    tokio::spawn(async move { orchestrate((tx, rx)).await.ok() });
+    tokio::spawn(async move { orchestrate(&CONFIG, (tx, rx)).await.unwrap() });
 
     tokio::task::spawn_blocking(|| {
         run_ui(ui_tx, ui_rx);
