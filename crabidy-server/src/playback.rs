@@ -249,13 +249,13 @@ impl Playback {
                         {
                             let mut queue = self.queue.lock().unwrap();
                             debug!("got queue lock");
-                            shuffle = queue.shuffle;
                             repeat = queue.repeat;
                             if queue.shuffle {
-                                queue.shuffle_on()
-                            } else {
                                 queue.shuffle_off()
+                            } else {
+                                queue.shuffle_on()
                             }
+                            shuffle = queue.shuffle;
                         }
                         debug!("queue lock released");
                         let queue_update_tx = self.update_tx.clone();
@@ -274,12 +274,12 @@ impl Playback {
                             let mut queue = self.queue.lock().unwrap();
                             debug!("got queue lock");
                             shuffle = queue.shuffle;
-                            repeat = queue.repeat;
                             if queue.repeat {
                                 queue.repeat = false
                             } else {
                                 queue.repeat = true
                             }
+                            repeat = queue.repeat;
                         }
                         debug!("queue lock released");
                         let queue_update_tx = self.update_tx.clone();

@@ -242,7 +242,7 @@ impl CrabidyService for RpcService {
         &self,
         _request: tonic::Request<ToggleRepeatRequest>,
     ) -> std::result::Result<tonic::Response<ToggleRepeatResponse>, tonic::Status> {
-        debug!("Received toggle_shuffle request");
+        debug!("Received toggle_repeat request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
         playback_tx
