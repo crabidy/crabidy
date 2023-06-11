@@ -3,11 +3,6 @@ name = "crabidy-server"
 version = "0.1.0"
 edition = "2021"
 
-
-[lib]
-name = "crabidy_server"
-path = "src/lib.rs"
-
 [[bin]]
 name = "crabidy_server"
 path = "src/main.rs"
