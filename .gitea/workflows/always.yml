@@ -1,0 +1,316 @@
+permissions:
+  contents: read
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+name: check
+
+jobs:
+  # check if code is correclty formatted
+  fmt:
+    runs-on: ubuntu-latest
+    name: ubuntu / stable / fmt
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --check --all
+
+  clippy:
+    runs-on: ubuntu-latest
+    name: ubuntu / ${{ matrix.toolchain }} / clippy
+    permissions:
+      contents: read
+      checks: write
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, beta, nightly ]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install ${{ matrix.toolchain }}
+        uses: https://github.com/dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: cargo clippy
+        uses: https://github.com/actions-rs-plus/clippy-check@v2
+
+  doc:
+    runs-on: ubuntu-latest
+    name: ubuntu / nightly / doc
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install nightly
+        uses: https://github.com/dtolnay/rust-toolchain@nightly
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: cargo doc
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: --cfg docsrs
+
+  udeps:
+    runs-on: ubuntu-latest
+    name: ubuntu / nightly / unused deps
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@nightly
+      - uses: https://github.com/taiki-e/install-action@cargo-udeps
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: cargo-udeps
+        run: cargo udeps
+
+  # trying if all feature combinations are passing
+  hack:
+    runs-on: ubuntu-latest
+    name: ubuntu / stable / feature-powerset
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+      - name: cargo install cargo-hack
+        uses: https://github.com/taiki-e/install-action@cargo-hack
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
+      - name: cargo hack
+        run: |
+          cargo hack --feature-powerset check
+
+# check if all packages have a minimal supported rust version and work with that version
+  msrv:
+    runs-on: ubuntu-latest
+    name: ubuntu / stable / msrv
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+      - uses: https://github.com/taiki-e/cache-cargo-install-action@v1
+        with:
+          tool: cargo-msrv
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: check msrv
+        run: |
+          $(
+            set -e;
+            for package_path in $(cargo metadata --no-deps | jq '.packages[].manifest_path' | xargs dirname);
+              do
+                cargo msrv --path $package_path verify;
+              done
+          )
+
+  required:
+    runs-on: ubuntu-latest
+    name: ubuntu / ${{ matrix.toolchain }}
+    strategy:
+      matrix:
+        toolchain: [stable, beta]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install ${{ matrix.toolchain }}
+        uses: https://github.com/dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        run: |
+          cargo run test --locked --all-features --all-targets
+      - name: cargo test --locked
+        run: |
+          cargo test --locked --all-features --all-targets
+      - name: cargo test --doc
+        run: |
+          cargo test --locked --all-features --doc
+
+  minimal:
+    runs-on: ubuntu-latest
+    name: ubuntu / stable / minimal-versions
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@nightly
+      - uses: https://github.com/taiki-e/install-action@cargo-hack
+      - uses: https://github.com/taiki-e/install-action@cargo-minimal-versions
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: cargo test
+        run: cargo minimal-versions test --locked --all-features --all-targets
+
+  os-check:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} / stable
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        run: |
+          cargo generate-lockfile
+      - name: cargo test
+        run: |
+          cargo test --locked --all-features --all-targets
+
+  coverage:
+    runs-on: ubuntu-latest
+    name: ubuntu / stable / coverage
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - uses: actions/checkout@v3
+      - uses: https://github.com/dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: https://github.com/taiki-e/install-action@cargo-llvm-cov
+      - name: Install latest nextest release
+        uses: https://github.com/taiki-e/install-action@nextest
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: Generate code coverage
+        run: |
+          cargo llvm-cov \
+          --all-features \
+          --fail-under-lines 80.0 \
+          --workspace \
+          --lcov \
+          --output-path lcov.info \
+          --ignore-filename-regex '(main.rs|command.rs|cli.rs|config.rs|logging.rs) \
+          nextest
+
+  loom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: cargo test --test loom
+        run: |
+          cargo test --release --test loom
+        env:
+          LOOM_MAX_PREEMPTIONS: 2
+          RUSTFLAGS: "--cfg loom"
+
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install nightly
+        uses: https://github.com/dtolnay/rust-toolchain@nightly
+      - run: |
+            # to get the symbolizer for debug symbol resolution
+            sudo apt install llvm
+            # to fix buggy leak analyzer:
+            # https://github.com/japaric/rust-san#unrealiable-leaksanitizer
+            sed -i '/\[features\]/i [profile.dev]' Cargo.toml
+            sed -i '/profile.dev/a opt-level = 1' Cargo.toml
+            cat Cargo.toml
+        name: Enable debug symbols
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+
+      - name: cargo test -Zsanitizer=address
+        # only --lib --tests b/c of https://github.com/rust-lang/rust/issues/53945
+        run: cargo test --all-features --target x86_64-unknown-linux-gnu
+        env:
+          ASAN_OPTIONS: "detect_odr_violation=0:detect_leaks=0"
+          RUSTFLAGS: "-Z sanitizer=address"
+
+      # Leaks can also occur in safe code
+      # https://github.com/japaric/rust-san#leaksanitizer
+      - name: cargo test -Zsanitizer=leak
+        run: cargo test --all-features --target x86_64-unknown-linux-gnu
+        env:
+          LSAN_OPTIONS: "suppressions=lsan-suppressions.txt"
+          RUSTFLAGS: "-Z sanitizer=leak"
+
+       # Just running the binary might not make much sense, unless we run
+       # a special test binary, running on tests does not work though
+       # https://github.com/japaric/rust-san#memorysanitizer-use-of-uninitialized-value-in-the-test-runner
+      - name: cargo run -Zsanitizer=memory
+        run: cargo run --all-features --target x86_64-unknown-linux-gnu
+        env:
+          LSAN_OPTIONS: "suppressions=lsan-suppressions.txt"
+          RUSTFLAGS: "-Z sanitizer=memory"
+
+        # https://github.com/japaric/rust-san#threadsanitizer-data-race-in-the-test-runner
+        # does not seem to work and we still panic even with setting the test threads in
+        # environment variable or cli flags, so we fall back to testing the binary
+        # which might be less usefull
+      - name: cargo run -Zsanitizer=thread
+        run: cargo run --all-features --target x86_64-unknown-linux-gnu
+        env:
+          LSAN_OPTIONS: "suppressions=lsan-suppressions.txt"
+          RUSTFLAGS: "-Z sanitizer=thread"
+          RUST_TEST_THREADS: "1"
+
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install nightly
+        run: |
+          echo "NIGHTLY=nightly-$(curl -s https://rust-lang.github.io/rustup-components-history/x86_64-unknown-linux-gnu/miri)" >> $GITHUB_ENV
+      - name: Install ${{ env.NIGHTLY }}
+        uses: https://github.com/dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.NIGHTLY }}
+          components: miri
+      - name: Install latest nextest release
+        uses: https://github.com/taiki-e/install-action@nextest
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build && cd -
+      - name: cargo miri
+        run: cargo miri nextest run
+        env:
+          MIRIFLAGS: ""
+

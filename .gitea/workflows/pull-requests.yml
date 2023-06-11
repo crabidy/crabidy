@@ -1,0 +1,122 @@
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+on:
+  pull_request:
+    branches: [main]
+
+name: info
+jobs:
+  bloat:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} / stable / bloat
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+      - uses: https://github.com/taiki-e/cache-cargo-install-action@v1
+        with:
+          tool: cargo-bloat
+      - name: Download last size result
+        uses: actions/download-artifact@v3
+        # we handle the absence in the run section
+        continue-on-error: true
+        with:
+          name: last-bloat-${{ matrix.os }}
+          path: last
+      - name: cargo-bloat
+        run: |
+          BINARY_PACKAGE=$(cargo metadata --no-deps  |  jq -r '.packages[] | select( .targets[] | select(.kind[] | contains("bin"))) | .name')
+          cargo bloat -p $BINARY_PACKAGE --release --crates  --message-format json > bloat.json
+          if test -f last/bloat.json; then
+            last_size="last size: $(printf "%0.4f MB" $(bc -l <<< $(jq -r '."file-size"' last/bloat.json)/1000000))"
+          fi
+          size="size: $(printf "%0.4f MB" $(bc -l <<< $(jq -r '."file-size"' bloat.json)/1000000))"
+          echo "Here is how the binary size progressed on ${{ matrix.os }}" >> body
+          echo $last_size >> body
+          echo $size >> body
+          gh pr comment ${{ github.event.number }} -F body
+      - name: Save size result
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ github.sha }}-bloat-${{ matrix.os }}
+          path: bloat.json
+      - name: Save last size result
+        uses: actions/upload-artifact@v3
+        with:
+          name: last-bloat-${{ matrix.os }}
+          path: bloat.json
+
+
+  outdated:
+    runs-on: ubuntu-latest
+    name: ubuntu / stable / outdated
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+      - uses: https://github.com/taiki-e/cache-cargo-install-action@v1
+        with:
+          tool: cargo-outdated
+      - name: cargo-outdated
+        run: |
+          echo There are some new verions the used dependencies: > body
+          echo "" >> body
+          if cargo outdated --exit-code 1 >> body; then
+            echo dependencies look good
+          else
+            gh pr comment ${{ github.event.number }} -F body
+          fi
+
+  iai:
+    runs-on: ubuntu-latest
+    name: ubuntu / stable / iai
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: true
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+      - uses: https://github.com/taiki-e/install-action@valgrind
+      - name: Download last bench result
+        uses: actions/download-artifact@v3
+        # we handle the absence in the run section
+        continue-on-error: true
+        with:
+          name: last-bench
+          path: last
+      - name: cargo-bloat
+        run: |
+          cargo bench --bench iai > bench.result
+          if test -f last/bench.result; then
+            echo Last benchmark results: >> body
+            cat last/bench.result >> body
+          fi
+          echo "Benchmark results" >> body
+          cat bench.result >> body
+          gh pr comment ${{ github.event.number }} -F body
+      - name: Save size result
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ github.sha }}-bench
+          path: bench.result
+      - name: Save last size result
+        uses: actions/upload-artifact@v3
+        with:
+          name: last-bench
+          path: bench.result
