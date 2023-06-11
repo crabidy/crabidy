@@ -375,19 +375,14 @@ checksum = "df8670b8c7b9dae1793364eafadf7239c40d669904660c5960d74cfd80b46a53"
 name = "cbd-tui"
 version = "0.1.0"
 dependencies = [
- "clap",
- "clap-serde-derive",
  "crabidy-core",
  "crossterm",
- "dirs",
  "flume",
- "lazy_static",
  "notify-rust",
  "ratatui",
  "serde",
  "tokio",
  "tokio-stream",
- "toml 0.7.4",
  "tonic",
 ]
 
@@ -638,8 +633,12 @@ name = "crabidy-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "clap",
+ "clap-serde-derive",
+ "dirs",
  "prost",
  "serde",
+ "toml 0.7.4",
  "tonic",
  "tonic-build",
 ]

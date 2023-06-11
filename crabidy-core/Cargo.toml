@@ -7,8 +7,12 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.68"
+clap = "4.3.3"
+clap-serde-derive = "0.2.0"
+dirs = "5.0.1"
 prost = "0.11"
 serde = "1.0.163"
+toml = "0.7.4"
 tonic = "0.9"
 
 [build-dependencies]
