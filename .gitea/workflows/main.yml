@@ -18,3 +18,26 @@ jobs:
           components: rustfmt
       - name: cargo fmt --check
         run: cargo fmt --check --all
+  cross:
+    runs-on: ubuntu-latest
+    name: ubuntu / stable  / cross-${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ["armv7-unknown-linux-gnueabihf", "aarch64-unknown-linux-gnu"]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+      - uses: https://github.com/taiki-e/install-action@cross
+      - name: cross compile for ${{ matrix.target }}
+        run: cross build --target ${{ matrix.target }} --release
+      - uses: actions/release-action@main
+        with:
+          files: |-
+            target/${{ matrix.target }}/release/crabidy-server
+          api_key: '${{secrets.RELEASE_TOKEN}}'
+
+
+
+
