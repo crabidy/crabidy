@@ -1,9 +1,9 @@
 use crabidy_core::proto::crabidy::{Queue, Track};
 use rand::{seq::SliceRandom, thread_rng};
 use std::time::SystemTime;
-use tracing::debug;
+use tracing::{debug, error};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct QueueManager {
     created_at: SystemTime,
     current_offset: usize,
@@ -111,11 +111,15 @@ impl QueueManager {
             if self.shuffle {
                 self.shuffle_all();
             }
-            let current_offset = self
+            let Some(current_offset) = self
                 .play_order
                 .iter()
                 .position(|&i| i == current_position as usize)
-                .unwrap();
+                else {
+                    error!("invalid current position");
+                    error!("queue: {:#?}", self);
+                    return false
+                };
             if self.shuffle {
                 self.play_order.swap(0, current_offset);
                 self.current_offset = 0;
@@ -184,11 +188,15 @@ impl QueueManager {
             if *pos == self.current_position() as u32 {
                 play_next = true;
             }
-            let offset = self
+            let Some(offset) = self
                 .play_order
                 .iter()
                 .position(|&i| i == *pos as usize)
-                .unwrap();
+                else {
+                    error!("invalid current position");
+                    error!("queue: {:#?}", self);
+                    return None
+                };
             if offset < self.current_offset {
                 self.current_offset -= 1;
             }
