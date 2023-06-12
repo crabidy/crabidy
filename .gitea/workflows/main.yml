@@ -8,32 +8,21 @@ on:
 
 jobs:
   fmt:
-    runs-on: dind
-    name: ubuntu / stable / fmt
+    runs-on: rust
+    name: stable / fmt
     steps:
       - uses: actions/checkout@v3
-      - name: Install stable
-        uses: https://github.com/dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
       - name: cargo fmt --check
         run: cargo fmt --check --all
   cross:
-    runs-on: dind
-    name: ubuntu / stable  / cross-${{ matrix.target }}
+    runs-on: rust-cross
+    name: stable / cross-${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
         target: ["armv7-unknown-linux-gnueabihf", "aarch64-unknown-linux-gnu"]
     steps:
       - uses: actions/checkout@v3
-      # - name: Install podman
-      #   run: |
-      #     apt update
-      #     apt-get -y install podman
-      - name: Install stable
-        uses: https://github.com/dtolnay/rust-toolchain@stable
-      - uses: https://github.com/taiki-e/install-action@cross
       - name: cross compile for ${{ matrix.target }}
         run: cross build --target ${{ matrix.target }} --release
       - uses: actions/release-action@main
