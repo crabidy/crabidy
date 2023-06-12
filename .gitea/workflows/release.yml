@@ -21,10 +21,11 @@ jobs:
           key: ${{ matrix.target }}
       - name: cross compile for ${{ matrix.target }}
         run: cross build --target ${{ matrix.target }} --release
-      - uses: actions/release-action@main
+      - uses: chmanie/release-action@v1.0.1
         with:
           files: |-
             target/${{ matrix.target }}/release/cbd-tui
             target/${{ matrix.target }}/release/crabidy-server
+          file_key: '_${{ matrix.target }}'
           api_key: '${{secrets.RELEASE_TOKEN}}'
           pre_release: true
