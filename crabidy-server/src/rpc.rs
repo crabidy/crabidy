@@ -1,13 +1,13 @@
 use crate::{PlaybackMessage, ProviderMessage};
 use crabidy_core::proto::crabidy::{
     crabidy_service_server::CrabidyService, get_update_stream_response::Update as StreamUpdate,
-    AppendRequest, AppendResponse, ChangeVolumeRequest, ChangeVolumeResponse,
-    GetLibraryNodeRequest, GetLibraryNodeResponse, GetUpdateStreamRequest, GetUpdateStreamResponse,
-    InitRequest, InitResponse, InsertRequest, InsertResponse, NextRequest, NextResponse,
-    PrevRequest, PrevResponse, QueueRequest, QueueResponse, RemoveRequest, RemoveResponse,
-    ReplaceRequest, ReplaceResponse, RestartTrackRequest, RestartTrackResponse, SaveQueueRequest,
-    SaveQueueResponse, SetCurrentRequest, SetCurrentResponse, StopRequest, StopResponse,
-    ToggleMuteRequest, ToggleMuteResponse, TogglePlayRequest, TogglePlayResponse,
+    AppendRequest, AppendResponse, ChangeVolumeRequest, ChangeVolumeResponse, ClearQueueRequest,
+    ClearQueueResponse, GetLibraryNodeRequest, GetLibraryNodeResponse, GetUpdateStreamRequest,
+    GetUpdateStreamResponse, InitRequest, InitResponse, InsertRequest, InsertResponse, NextRequest,
+    NextResponse, PrevRequest, PrevResponse, QueueRequest, QueueResponse, RemoveRequest,
+    RemoveResponse, ReplaceRequest, ReplaceResponse, RestartTrackRequest, RestartTrackResponse,
+    SaveQueueRequest, SaveQueueResponse, SetCurrentRequest, SetCurrentResponse, StopRequest,
+    StopResponse, ToggleMuteRequest, ToggleMuteResponse, TogglePlayRequest, TogglePlayResponse,
     ToggleRepeatRequest, ToggleRepeatResponse, ToggleShuffleRequest, ToggleShuffleResponse,
 };
 use futures::TryStreamExt;
@@ -278,6 +278,25 @@ impl CrabidyService for RpcService {
 
         Ok(Response::new(Box::pin(output_stream)))
     }
+
+    #[instrument(skip(self, _request))]
+    async fn clear_queue(
+        &self,
+        _request: tonic::Request<ClearQueueRequest>,
+    ) -> std::result::Result<tonic::Response<ClearQueueResponse>, tonic::Status> {
+        debug!("Received clear_queue request");
+        let playback_tx = self.playback_tx.clone();
+        let span = debug_span!("play-chan");
+        let uuids = Vec::new();
+        playback_tx
+            .send_async(PlaybackMessage::Replace { uuids, span })
+            .in_current_span()
+            .await
+            .map_err(|_| Status::internal("Failed to send request via channel"))?;
+        let reply = ClearQueueResponse {};
+        Ok(Response::new(reply))
+    }
+
     #[instrument(skip(self, _request))]
     async fn save_queue(
         &self,

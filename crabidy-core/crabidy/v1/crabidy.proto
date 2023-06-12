@@ -18,7 +18,7 @@ service CrabidyService {
   rpc ToggleShuffle(ToggleShuffleRequest) returns (ToggleShuffleResponse);
   rpc ToggleRepeat(ToggleRepeatRequest) returns (ToggleRepeatResponse);
   rpc GetUpdateStream(GetUpdateStreamRequest) returns (stream GetUpdateStreamResponse);
-  rpc ClearQueue(ClearQueueRequest) returns (ClearQueueRequest);
+  rpc ClearQueue(ClearQueueRequest) returns (ClearQueueResponse);
   rpc SaveQueue(SaveQueueRequest) returns (SaveQueueResponse);
 
   // Playback
