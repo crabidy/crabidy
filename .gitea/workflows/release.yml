@@ -1,0 +1,25 @@
+name: CI release
+run-name: CI release
+on:
+  push:
+    tags: '*'
+
+jobs:
+  release:
+    runs-on: rust-cross
+    name: stable / cross-${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ["armv7-unknown-linux-gnueabihf", "aarch64-unknown-linux-gnu"]
+    steps:
+      - uses: actions/checkout@v3
+      - run: cargo fmt --check
+      - name: cross compile for ${{ matrix.target }}
+        run: cross build --target ${{ matrix.target }} --release
+      - uses: actions/release-action@main
+        with:
+          files: |-
+            target/${{ matrix.target }}/release/crabidy-server
+          api_key: '${{secrets.RELEASE_TOKEN}}'
+          pre_release: true

@@ -73,7 +73,7 @@ where
     if let Some(config_dir) = dirs::config_dir() {
         let dir = Path::new(&config_dir).join("crabidy");
         if !dir.is_dir() {
-            create_dir_all(&dir);
+            create_dir_all(&dir).expect("Could not create crabidy config directory");
         }
         let config_file_path = dir.join(config_file_name);
         if !config_file_path.is_file() {
