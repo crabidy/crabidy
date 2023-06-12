@@ -41,6 +41,9 @@ impl Queue {
             self.tx.send(MessageFromUi::SetCurrentTrack(pos));
         }
     }
+    pub fn select_current(&mut self) {
+        self.select(Some(self.current_position));
+    }
     pub fn remove_track(&mut self) {
         if let Some(pos) = self.selected() {
             // FIXME: mark multiple tracks on queue and remove them

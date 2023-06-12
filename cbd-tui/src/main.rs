@@ -303,6 +303,9 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         (UiFocus::Queue, KeyModifiers::CONTROL, KeyCode::Char('u')) => {
                             app.queue.up();
                         }
+                        (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('o')) => {
+                            app.queue.select_current();
+                        }
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Enter) => {
                             app.queue.play_selected();
                         }
