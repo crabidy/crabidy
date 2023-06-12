@@ -201,6 +201,28 @@ impl CrabidyService for RpcService {
         Ok(Response::new(reply))
     }
 
+    #[instrument(skip(self, request), fields(exclude_current))]
+    async fn clear_queue(
+        &self,
+        request: tonic::Request<ClearQueueRequest>,
+    ) -> std::result::Result<tonic::Response<ClearQueueResponse>, tonic::Status> {
+        let exclude_current = request.into_inner().exclude_current;
+        Span::current().record("exclude_current", exclude_current);
+        debug!("Received clear_queue request");
+        let playback_tx = self.playback_tx.clone();
+        let span = debug_span!("play-chan");
+        playback_tx
+            .send_async(PlaybackMessage::Clear {
+                exclude_current,
+                span,
+            })
+            .in_current_span()
+            .await
+            .map_err(|_| Status::internal("Failed to send request via channel"))?;
+        let reply = ClearQueueResponse {};
+        Ok(Response::new(reply))
+    }
+
     #[instrument(skip(self, request), fields(position))]
     async fn set_current(
         &self,
@@ -277,24 +299,6 @@ impl CrabidyService for RpcService {
         });
 
         Ok(Response::new(Box::pin(output_stream)))
-    }
-
-    #[instrument(skip(self, _request))]
-    async fn clear_queue(
-        &self,
-        _request: tonic::Request<ClearQueueRequest>,
-    ) -> std::result::Result<tonic::Response<ClearQueueResponse>, tonic::Status> {
-        debug!("Received clear_queue request");
-        let playback_tx = self.playback_tx.clone();
-        let span = debug_span!("play-chan");
-        let uuids = Vec::new();
-        playback_tx
-            .send_async(PlaybackMessage::Replace { uuids, span })
-            .in_current_span()
-            .await
-            .map_err(|_| Status::internal("Failed to send request via channel"))?;
-        let reply = ClearQueueResponse {};
-        Ok(Response::new(reply))
     }
 
     #[instrument(skip(self, _request))]

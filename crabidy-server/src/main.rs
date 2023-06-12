@@ -170,6 +170,10 @@ pub enum PlaybackMessage {
         uuids: Vec<String>,
         span: Span,
     },
+    Clear {
+        exclude_current: bool,
+        span: Span,
+    },
     SetCurrent {
         position: u32,
         span: Span,

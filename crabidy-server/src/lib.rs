@@ -219,6 +219,20 @@ impl QueueManager {
             self.shuffle_behind(self.current_offset);
         }
     }
+
+    pub fn clear(&mut self, exclude_current: bool) -> bool {
+        let current_track = self.current_track();
+        self.current_offset = 0;
+        self.tracks.clear();
+
+        if exclude_current {
+            if let Some(track) = current_track {
+                self.tracks.push(track);
+            }
+        }
+
+        !exclude_current
+    }
 }
 
 #[cfg(test)]

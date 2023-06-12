@@ -225,6 +225,27 @@ impl Playback {
                         debug!("queue lock released");
                     }
 
+                    PlaybackMessage::Clear {
+                        exclude_current,
+                        span,
+                    } => {
+                        let _e = span.enter();
+                        debug!("clearing");
+                        let should_stop = {
+                            let mut queue = self.queue.lock().unwrap();
+                            debug!("got queue lock");
+                            let should_stop = queue.clear(exclude_current);
+                            let queue_update_tx = self.update_tx.clone();
+                            let update = StreamUpdate::Queue(queue.clone().into());
+                            queue_update_tx.send(update).unwrap();
+                            should_stop
+                        };
+                        debug!("queue lock released");
+                        if should_stop {
+                            self.player.stop().in_current_span().await;
+                        }
+                    }
+
                     PlaybackMessage::SetCurrent {
                         position: queue_position,
                         span,

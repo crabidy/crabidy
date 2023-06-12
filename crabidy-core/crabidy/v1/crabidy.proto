@@ -14,11 +14,11 @@ service CrabidyService {
   rpc Append(AppendRequest) returns (AppendResponse);
   rpc Remove(RemoveRequest) returns (RemoveResponse);
   rpc Insert(InsertRequest) returns (InsertResponse);
+  rpc ClearQueue(ClearQueueRequest) returns (ClearQueueResponse);
   rpc SetCurrent(SetCurrentRequest) returns (SetCurrentResponse);
   rpc ToggleShuffle(ToggleShuffleRequest) returns (ToggleShuffleResponse);
   rpc ToggleRepeat(ToggleRepeatRequest) returns (ToggleRepeatResponse);
   rpc GetUpdateStream(GetUpdateStreamRequest) returns (stream GetUpdateStreamResponse);
-  rpc ClearQueue(ClearQueueRequest) returns (ClearQueueResponse);
   rpc SaveQueue(SaveQueueRequest) returns (SaveQueueResponse);
 
   // Playback
