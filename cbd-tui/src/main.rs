@@ -123,6 +123,9 @@ async fn poll(
                 MessageFromUi::ToggleRepeat => {
                     rpc_client.toggle_repeat().await?
                 }
+                MessageFromUi::ClearQueue(exclude_current) => {
+                    rpc_client.clear_queue(exclude_current).await?
+                }
             }
         }
         Some(resp) = rpc_client.update_stream.next() => {
@@ -305,6 +308,12 @@ fn run_ui(tx: Sender<MessageFromUi>, rx: Receiver<MessageToUi>) {
                         }
                         (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('d')) => {
                             app.queue.remove_track();
+                        }
+                        (UiFocus::Queue, KeyModifiers::NONE, KeyCode::Char('c')) => {
+                            tx.send(MessageFromUi::ClearQueue(true));
+                        }
+                        (UiFocus::Queue, KeyModifiers::SHIFT, KeyCode::Char('C')) => {
+                            tx.send(MessageFromUi::ClearQueue(false));
                         }
                         _ => {}
                     }

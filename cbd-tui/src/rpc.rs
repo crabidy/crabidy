@@ -1,7 +1,7 @@
 use crabidy_core::proto::crabidy::{
     crabidy_service_client::CrabidyServiceClient, AppendRequest, ChangeVolumeRequest,
-    GetLibraryNodeRequest, GetUpdateStreamRequest, GetUpdateStreamResponse, InitRequest,
-    InitResponse, InsertRequest, LibraryNode, NextRequest, PrevRequest, QueueRequest,
+    ClearQueueRequest, GetLibraryNodeRequest, GetUpdateStreamRequest, GetUpdateStreamResponse,
+    InitRequest, InitResponse, InsertRequest, LibraryNode, NextRequest, PrevRequest, QueueRequest,
     RemoveRequest, ReplaceRequest, RestartTrackRequest, SetCurrentRequest, ToggleMuteRequest,
     TogglePlayRequest, ToggleRepeatRequest, ToggleShuffleRequest,
 };
@@ -125,6 +125,12 @@ impl RpcClient {
             positions: positions.iter().map(|p| *p as u32).collect(),
         });
         self.client.remove(remove_request).await?;
+        Ok(())
+    }
+
+    pub async fn clear_queue(&mut self, exclude_current: bool) -> Result<(), Box<dyn Error>> {
+        let clear_queue_request = Request::new(ClearQueueRequest { exclude_current });
+        self.client.clear_queue(clear_queue_request).await?;
         Ok(())
     }
 

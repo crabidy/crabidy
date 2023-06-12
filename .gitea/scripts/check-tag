@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "$(echo $GITHUB_REF| cut -d'/' -f2)"
 if [ "$(echo $GITHUB_REF| cut -d'/' -f2)" != "tags" ]; then
+    echo "Not a tag"
     exit 1;
 fi

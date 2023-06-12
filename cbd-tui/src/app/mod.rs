@@ -65,6 +65,7 @@ pub enum MessageFromUi {
     InsertTracks(Vec<String>, usize),
     RemoveTracks(Vec<usize>),
     ReplaceQueue(Vec<String>),
+    ClearQueue(bool),
     NextTrack,
     PrevTrack,
     RestartTrack,
