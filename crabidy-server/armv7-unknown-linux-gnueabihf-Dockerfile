@@ -1,0 +1,5 @@
+FROM ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge
+RUN dpkg --add-architecture armhf
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update &&  apt-get install -y alsa:armhf librust-alsa-sys-dev:armhf libasound2-dev:armhf portaudio19-dev:armhf build-essential libpulse-dev:armhf libdbus-1-dev:armhf pkg-config apt-utils unzip
+RUN curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v23.2/protoc-23.2-linux-x86_64.zip && unzip protoc-23.2-linux-x86_64.zip
