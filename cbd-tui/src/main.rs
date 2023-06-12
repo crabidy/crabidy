@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::task::spawn_blocking(|| {
         run_ui(ui_tx, ui_rx);
     })
-    .await;
+    .await?;
 
     Ok(())
 }
@@ -55,14 +55,16 @@ async fn orchestrate<'a>(
     let mut rpc_client = rpc::RpcClient::connect(&config.server.address).await?;
 
     if let Some(root_node) = rpc_client.get_library_node("node:/").await? {
-        tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()));
+        tx.send(MessageToUi::ReplaceLibraryNode(root_node.clone()))?;
     }
 
     let init_data = rpc_client.init().await?;
     tx.send_async(MessageToUi::Init(init_data)).await?;
 
     loop {
-        poll(&mut rpc_client, &rx, &tx).await.ok();
+        if let Err(er) = poll(&mut rpc_client, &rx, &tx).await {
+            println!("ERROR");
+        }
     }
 }
 
