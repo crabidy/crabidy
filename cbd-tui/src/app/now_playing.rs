@@ -45,10 +45,21 @@ impl NowPlaying {
     }
     pub fn update_track(&mut self, active: Option<Track>) {
         if let Some(track) = &active {
+            let body = if let Some(ref album) = track.album {
+                format!(
+                    "{} by {}\n\n{} ({})",
+                    track.title,
+                    track.artist,
+                    album.title,
+                    // FIXME: get out year and format differently if it's missing
+                    album.release_date()
+                )
+            } else {
+                format!("{} by {}", track.title, track.artist,)
+            };
             Notification::new()
-                .summary("Crabidy playing")
-                // FIXME: album
-                .body(&format!("{} by {}", track.title, track.artist))
+                .summary("Now playing")
+                .body(&body)
                 .show()
                 .unwrap();
         }
