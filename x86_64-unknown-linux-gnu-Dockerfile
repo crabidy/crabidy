@@ -1,0 +1,4 @@
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:edge
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y alsa librust-alsa-sys-dev libasound2-dev portaudio19-dev build-essential libpulse-dev libdbus-1-dev pkg-config apt-utils unzip
+RUN curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v23.2/protoc-23.2-linux-x86_64.zip && unzip protoc-23.2-linux-x86_64.zip
