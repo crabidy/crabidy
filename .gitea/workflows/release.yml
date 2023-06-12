@@ -15,6 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: cargo fmt --check
+      - uses: https://github.com/Swatinem/rust-cache@v2
       - name: cross compile for ${{ matrix.target }}
         run: cross build --target ${{ matrix.target }} --release
       - uses: actions/release-action@main
