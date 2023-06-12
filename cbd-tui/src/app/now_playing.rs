@@ -6,12 +6,10 @@ use crabidy_core::proto::crabidy::{PlayState, QueueModifiers, Track, TrackPositi
 
 use ratatui::{
     backend::Backend,
-    layout::{Alignment, Constraint, Corner, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{
-        Block, BorderType, Borders, Gauge, LineGauge, List, ListItem, ListState, Paragraph, Wrap,
-    },
+    widgets::{Block, BorderType, Borders, LineGauge, Paragraph, Wrap},
     Frame,
 };
 

@@ -1,11 +1,5 @@
-use std::{
-    fs::{create_dir_all, read_to_string, File},
-    io::Write,
-    path::Path,
-};
-
 use crabidy_core::{
-    clap::{self, Parser},
+    clap::{self},
     clap_serde_derive,
     serde::Serialize,
     ClapSerde,

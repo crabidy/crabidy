@@ -1,21 +1,13 @@
 use crabidy_core::proto::crabidy::{
-    crabidy_service_client::CrabidyServiceClient, get_update_stream_response::Update,
-    AppendRequest, ChangeVolumeRequest, GetLibraryNodeRequest, GetLibraryNodeResponse,
-    GetUpdateStreamRequest, GetUpdateStreamResponse, InitRequest, InitResponse, InsertRequest,
-    LibraryNode, NextRequest, PrevRequest, QueueRequest, RemoveRequest, ReplaceRequest,
-    RestartTrackRequest, SetCurrentRequest, SetCurrentResponse, ToggleMuteRequest,
-    TogglePlayRequest, TogglePlayResponse, ToggleRepeatRequest, ToggleShuffleRequest,
+    crabidy_service_client::CrabidyServiceClient, AppendRequest, ChangeVolumeRequest,
+    GetLibraryNodeRequest, GetUpdateStreamRequest, GetUpdateStreamResponse, InitRequest,
+    InitResponse, InsertRequest, LibraryNode, NextRequest, PrevRequest, QueueRequest,
+    RemoveRequest, ReplaceRequest, RestartTrackRequest, SetCurrentRequest, ToggleMuteRequest,
+    TogglePlayRequest, ToggleRepeatRequest, ToggleShuffleRequest,
 };
 
-use std::{
-    collections::HashMap,
-    error::Error,
-    fmt, io, mem, println, thread,
-    time::{Duration, Instant},
-    vec,
-};
-use tokio::task;
-use tokio_stream::StreamExt;
+use std::{collections::HashMap, error::Error, fmt, time::Duration};
+
 use tonic::{
     transport::{Channel, Endpoint},
     Request, Streaming,
@@ -72,9 +64,7 @@ impl RpcClient {
     }
 
     pub async fn reconnect_update_stream(&mut self) {
-        let update_stream = Self::get_update_stream(&mut self.client).await;
-        // FIXME: apparently mem::replace doesn't do anything here
-        mem::replace(&mut self.update_stream, update_stream);
+        self.update_stream = Self::get_update_stream(&mut self.client).await;
     }
 
     pub async fn init(&mut self) -> Result<InitResponse, Box<dyn Error>> {

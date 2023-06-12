@@ -3,15 +3,11 @@ mod list;
 mod now_playing;
 mod queue;
 
-use flume::{Receiver, Sender};
+use flume::Sender;
 use ratatui::{
     backend::Backend,
-    layout::{Alignment, Constraint, Corner, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Span, Spans},
-    widgets::{
-        Block, BorderType, Borders, Gauge, LineGauge, List, ListItem, ListState, Paragraph, Wrap,
-    },
+    layout::{Constraint, Direction, Layout},
+    style::Color,
     Frame,
 };
 

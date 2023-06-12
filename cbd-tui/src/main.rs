@@ -3,25 +3,13 @@ mod config;
 mod rpc;
 
 use std::{
-    cell::{OnceCell, RefCell},
-    collections::HashMap,
     error::Error,
-    fmt, io,
-    ops::{Div, IndexMut},
-    println,
+    io,
     sync::OnceLock,
-    thread,
     time::{Duration, Instant},
-    vec,
 };
 
-use crabidy_core::init_config;
-use crabidy_core::proto::crabidy::{
-    crabidy_service_client::CrabidyServiceClient,
-    get_update_stream_response::Update as StreamUpdate, GetLibraryNodeRequest,
-    InitResponse as InitialData, LibraryNode, PlayState, Queue as QueueData, QueueModifiers,
-    QueueTrack, Track, TrackPosition,
-};
+use crabidy_core::proto::crabidy::{get_update_stream_response::Update as StreamUpdate, PlayState};
 
 use crossterm::{
     event::{
@@ -31,11 +19,10 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use flume::{Receiver, Sender};
-use notify_rust::Notification;
+
 use ratatui::{backend::CrosstermBackend, Terminal};
-use tokio::{fs, select, signal, task};
+use tokio::select;
 use tokio_stream::StreamExt;
-use tonic::{transport::Channel, Request, Status, Streaming};
 
 use app::{App, MessageFromUi, MessageToUi, StatefulList, UiFocus};
 use config::Config;
