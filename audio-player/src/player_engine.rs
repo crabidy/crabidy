@@ -222,6 +222,7 @@ impl PlayerEngine {
         SEEK_TO.store(time.as_secs(), Ordering::SeqCst);
         // FIXME: ideally we would like to return once the seeking is successful
         // then return the current elapsed time
+        // Cond-var might be needed to sleep this (seeking takes time)
         Ok(time)
     }
 
