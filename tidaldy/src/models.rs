@@ -162,7 +162,7 @@ impl From<Track> for crabidy_core::proto::crabidy::Track {
             title: track.title,
             artist: track.artist.name,
             album: Some(track.album.into()),
-            duration: Some(track.duration as u32),
+            duration: Some(track.duration as u32 * 1000),
         }
     }
 }
