@@ -28,11 +28,9 @@ impl ProviderOrchestrator {
                     } => {
                         let _e = span.enter();
                         let result = self.get_lib_node(&uuid).in_current_span().await;
-                        result_tx
-                            .send_async(result)
-                            .in_current_span()
-                            .await
-                            .unwrap();
+                        if let Err(err) = result_tx.send_async(result).in_current_span().await {
+                            error!("failed to send result: {}", err);
+                        }
                     }
                     ProviderMessage::GetTrack {
                         uuid,
@@ -41,11 +39,9 @@ impl ProviderOrchestrator {
                     } => {
                         let _e = span.enter();
                         let result = self.get_metadata_for_track(&uuid).in_current_span().await;
-                        result_tx
-                            .send_async(result)
-                            .in_current_span()
-                            .await
-                            .unwrap();
+                        if let Err(err) = result_tx.send_async(result).in_current_span().await {
+                            error!("failed to send result: {}", err);
+                        }
                     }
                     ProviderMessage::GetTrackUrls {
                         uuid,
@@ -54,11 +50,9 @@ impl ProviderOrchestrator {
                     } => {
                         let _e = span.enter();
                         let result = self.get_urls_for_track(&uuid).in_current_span().await;
-                        result_tx
-                            .send_async(result)
-                            .in_current_span()
-                            .await
-                            .unwrap();
+                        if let Err(err) = result_tx.send_async(result).in_current_span().await {
+                            error!("failed to send result: {}", err);
+                        }
                     }
                     ProviderMessage::FlattenNode {
                         uuid,
@@ -67,11 +61,9 @@ impl ProviderOrchestrator {
                     } => {
                         let _e = span.enter();
                         let result = self.flatten_node(&uuid).in_current_span().await;
-                        result_tx
-                            .send_async(result)
-                            .in_current_span()
-                            .await
-                            .unwrap();
+                        if let Err(err) = result_tx.send_async(result).in_current_span().await {
+                            error!("failed to send result: {}", err);
+                        }
                     }
                 }
             }
@@ -118,7 +110,7 @@ impl ProviderClient for ProviderOrchestrator {
             tidaldy::Client::init(&raw_toml_settings)
                 .in_current_span()
                 .await
-                .unwrap(),
+                .expect("Failed to init Tidal clienta"),
         );
         let new_toml_config = tidal_client.settings();
         if let Err(err) = tokio::fs::write(&config_file, new_toml_config)

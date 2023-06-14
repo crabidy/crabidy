@@ -250,11 +250,13 @@ impl CrabidyService for RpcService {
         debug!("Received toggle_shuffle request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
-        playback_tx
+        if let Err(err) = playback_tx
             .send_async(PlaybackMessage::ToggleShuffle { span })
             .in_current_span()
             .await
-            .unwrap();
+        {
+            error!("Failed to send request via channel: {}", err);
+        }
         let reply = ToggleShuffleResponse {};
         Ok(Response::new(reply))
     }
@@ -267,11 +269,13 @@ impl CrabidyService for RpcService {
         debug!("Received toggle_repeat request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
-        playback_tx
+        if let Err(err) = playback_tx
             .send_async(PlaybackMessage::ToggleRepeat { span })
             .in_current_span()
             .await
-            .unwrap();
+        {
+            error!("Failed to send request via channel: {}", err);
+        }
         let reply = ToggleRepeatResponse {};
         Ok(Response::new(reply))
     }
@@ -320,11 +324,13 @@ impl CrabidyService for RpcService {
         debug!("Received toggle_play request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
-        playback_tx
+        if let Err(err) = playback_tx
             .send_async(PlaybackMessage::TogglePlay { span })
             .in_current_span()
             .await
-            .unwrap();
+        {
+            error!("Failed to send request via channel: {}", err);
+        }
         let reply = TogglePlayResponse {};
         Ok(Response::new(reply))
     }
@@ -337,11 +343,13 @@ impl CrabidyService for RpcService {
         debug!("Received stop request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
-        playback_tx
+        if let Err(err) = playback_tx
             .send_async(PlaybackMessage::Stop { span })
             .in_current_span()
             .await
-            .unwrap();
+        {
+            error!("Failed to send request via channel: {}", err);
+        }
         let reply = StopResponse {};
         Ok(Response::new(reply))
     }
@@ -356,11 +364,13 @@ impl CrabidyService for RpcService {
         debug!("Received change_volume request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
-        playback_tx
+        if let Err(err) = playback_tx
             .send_async(PlaybackMessage::ChangeVolume { delta, span })
             .in_current_span()
             .await
-            .unwrap();
+        {
+            error!("Failed to send request via channel: {}", err);
+        }
         let reply = ChangeVolumeResponse {};
         Ok(Response::new(reply))
     }
@@ -373,11 +383,13 @@ impl CrabidyService for RpcService {
         debug!("Received toggle_mute request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
-        playback_tx
+        if let Err(err) = playback_tx
             .send_async(PlaybackMessage::ToggleMute { span })
             .in_current_span()
             .await
-            .unwrap();
+        {
+            error!("Failed to send request via channel: {}", err);
+        }
         let reply = ToggleMuteResponse {};
         Ok(Response::new(reply))
     }
@@ -390,11 +402,13 @@ impl CrabidyService for RpcService {
         debug!("Received next request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
-        playback_tx
+        if let Err(err) = playback_tx
             .send_async(PlaybackMessage::Next { span })
             .in_current_span()
             .await
-            .unwrap();
+        {
+            error!("Failed to send request via channel: {}", err);
+        }
         let reply = NextResponse {};
         Ok(Response::new(reply))
     }
@@ -407,11 +421,13 @@ impl CrabidyService for RpcService {
         debug!("Received prev request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
-        playback_tx
+        if let Err(err) = playback_tx
             .send_async(PlaybackMessage::Prev { span })
             .in_current_span()
             .await
-            .unwrap();
+        {
+            error!("Failed to send request via channel: {}", err);
+        }
         let reply = PrevResponse {};
         Ok(Response::new(reply))
     }
@@ -424,11 +440,13 @@ impl CrabidyService for RpcService {
         debug!("Received restart_track request");
         let playback_tx = self.playback_tx.clone();
         let span = debug_span!("play-chan");
-        playback_tx
+        if let Err(err) = playback_tx
             .send_async(PlaybackMessage::RestartTrack { span })
             .in_current_span()
             .await
-            .unwrap();
+        {
+            error!("Failed to send request via channel: {}", err);
+        }
         let reply = RestartTrackResponse {};
         Ok(Response::new(reply))
     }

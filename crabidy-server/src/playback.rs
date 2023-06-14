@@ -51,7 +51,10 @@ impl Playback {
                         let repeat;
                         let shuffle;
                         let response = {
-                            let queue = self.queue.lock().unwrap();
+                            let Ok(queue) = self.queue.lock() else {
+                                error!("failed to get queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             repeat = queue.repeat;
                             shuffle = queue.shuffle;
@@ -69,13 +72,11 @@ impl Playback {
                             trace!("position {:?}", position);
                             let play_state = {
                                 debug!("getting play state lock");
-                                match *self.state.lock().unwrap() {
-                                    PlayState::Playing => PlayState::Playing,
-                                    PlayState::Paused => PlayState::Paused,
-                                    PlayState::Stopped => PlayState::Stopped,
-                                    PlayState::Loading => PlayState::Loading,
-                                    _ => PlayState::Unspecified,
-                                }
+                                let Ok(play_state) = self.state.lock() else {
+                                    error!("failed to get play state lock");
+                                    continue;
+                                };
+                                *play_state
                             };
                             trace!("play_state {:?}", play_state);
                             debug!("released play state lock");
@@ -90,7 +91,9 @@ impl Playback {
                             }
                         };
                         trace!("response {:?}", response);
-                        result_tx.send(response).unwrap();
+                        if let Err(err) = result_tx.send(response) {
+                            error!("failed to send response: {:#?}", err);
+                        }
                     }
                     PlaybackMessage::Replace { uuids, span } => {
                         let _e = span.enter();
@@ -108,12 +111,17 @@ impl Playback {
                         }
                         trace!("got tracks {:?}", all_tracks);
                         let current = {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             queue.replace_with_tracks(&all_tracks);
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
-                            queue_update_tx.send(update).unwrap();
+                            if let Err(err) = queue_update_tx.send(update) {
+                                error!("{:?}", err)
+                            };
                             queue.current_track()
                         };
                         debug!("got current {:?}", current);
@@ -136,7 +144,10 @@ impl Playback {
                         }
                         trace!("got tracks {:?}", all_tracks);
                         {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             queue.queue_tracks(&all_tracks);
                             let queue_update_tx = self.update_tx.clone();
@@ -164,7 +175,10 @@ impl Playback {
                         }
                         trace!("got tracks {:?}", all_tracks);
                         {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             queue.append_tracks(&all_tracks);
                             let queue_update_tx = self.update_tx.clone();
@@ -180,16 +194,27 @@ impl Playback {
                         let _e = span.enter();
                         debug!("removing");
                         let track = {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             let track = queue.remove_tracks(&positions);
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
-                            queue_update_tx.send(update).unwrap();
+                            if let Err(err) = queue_update_tx.send(update) {
+                                error!("{:?}", err)
+                            };
                             track
                         };
                         debug!("queue lock released");
-                        let state = *self.state.lock().unwrap();
+                        let state = {
+                            let Ok(state) = self.state.lock() else {
+                            error!("failed to get play state lock");
+                            continue;
+                        };
+                            *state
+                        };
                         if state == PlayState::Playing {
                             self.play(track).in_current_span().await;
                         }
@@ -215,12 +240,17 @@ impl Playback {
                         }
                         trace!("got tracks {:?}", all_tracks);
                         {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             queue.insert_tracks(position, &all_tracks);
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
-                            queue_update_tx.send(update).unwrap();
+                            if let Err(err) = queue_update_tx.send(update) {
+                                error!("{:?}", err)
+                            };
                         }
                         debug!("queue lock released");
                     }
@@ -232,17 +262,24 @@ impl Playback {
                         let _e = span.enter();
                         debug!("clearing");
                         let should_stop = {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             let should_stop = queue.clear(exclude_current);
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
-                            queue_update_tx.send(update).unwrap();
+                            if let Err(err) = queue_update_tx.send(update) {
+                                error!("{:?}", err)
+                            };
                             should_stop
                         };
                         debug!("queue lock released");
                         if should_stop {
-                            self.player.stop().in_current_span().await;
+                            if let Err(err) = self.player.stop().in_current_span().await {
+                                error!("{:?}", err)
+                            }
                         }
                     }
 
@@ -253,7 +290,10 @@ impl Playback {
                         let _e = span.enter();
                         debug!("setting current");
                         let track = {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             queue.set_current_position(queue_position);
                             queue.current_track()
@@ -268,7 +308,10 @@ impl Playback {
                         let shuffle;
                         let repeat;
                         {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             repeat = queue.repeat;
                             if queue.shuffle {
@@ -292,7 +335,10 @@ impl Playback {
                         let shuffle;
                         let repeat;
                         {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             shuffle = queue.shuffle;
                             if queue.repeat {
@@ -314,7 +360,13 @@ impl Playback {
                         let _e = span.enter();
                         debug!("toggling play");
                         {
-                            let state = *self.state.lock().unwrap();
+                            let state = {
+                                let Ok(state) = self.state.lock() else {
+                                debug!("got state lock");
+                                continue;
+                            };
+                                *state
+                            };
                             debug!("got state lock");
                             if state == PlayState::Playing {
                                 if let Err(err) = self.player.pause().await {
@@ -358,7 +410,10 @@ impl Playback {
                         let _e = span.enter();
                         debug!("nexting");
                         let track = {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             queue.next_track()
                         };
@@ -371,7 +426,10 @@ impl Playback {
                         let _e = span.enter();
                         debug!("preving");
                         let track = {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             debug!("got queue lock");
                             queue.prev_track()
                         };
@@ -384,7 +442,11 @@ impl Playback {
                         debug!("state changed");
 
                         let play_state = {
-                            *self.state.lock().unwrap() = state;
+                            let Ok(mut state_lock) = self.state.lock() else {
+                                debug!("got state lock");
+                                continue;
+                            };
+                            *state_lock = state;
                             state
                         };
                         debug!("released state lock and got play state {:?}", play_state);
@@ -513,7 +575,10 @@ impl Playback {
                     Err(err) => {
                         warn!("no urls found for track {:?}: {}", track.uuid, err);
                         uuid = {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("got queue lock");
+                                continue;
+                            };
                             if let Some(track) = queue.next_track() {
                                 track.uuid.clone()
                             } else {
@@ -524,7 +589,10 @@ impl Playback {
                 }
             };
             {
-                let queue = self.queue.lock().unwrap();
+                let Ok(queue) = self.queue.lock() else {
+                    error!("poisend queue lock");
+                    return
+                };
                 let queue_update_tx = self.update_tx.clone();
                 let track = queue.current_track();
                 let update = StreamUpdate::QueueTrack(QueueTrack {
@@ -553,7 +621,10 @@ impl Playback {
                     Err(err) => {
                         warn!("no urls found for track {:?}: {}", track.uuid, err);
                         uuid = {
-                            let mut queue = self.queue.lock().unwrap();
+                            let Ok(mut queue) = self.queue.lock() else {
+                                debug!("poisend queue lock");
+                                return;
+                            };
                             if let Some(track) = queue.next_track() {
                                 track.uuid.clone()
                             } else {
@@ -564,7 +635,10 @@ impl Playback {
                 }
             };
             {
-                let queue = self.queue.lock().unwrap();
+                let Ok(queue) = self.queue.lock() else {
+                    error!("poisend queue lock");
+                    return
+                };
                 let queue_update_tx = self.update_tx.clone();
                 let track = queue.current_track();
                 let update = StreamUpdate::QueueTrack(QueueTrack {

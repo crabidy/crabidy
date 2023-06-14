@@ -3,7 +3,7 @@ use crabidy_core::proto::crabidy::{
     crabidy_service_server::CrabidyServiceServer, InitResponse, LibraryNode, PlayState, Track,
 };
 use crabidy_core::{ProviderClient, ProviderError};
-use tracing::{debug_span, info, instrument, warn, Span};
+use tracing::{debug_span, error, info, instrument, warn, Span};
 use tracing_subscriber::{filter::Targets, prelude::*};
 
 mod playback;
@@ -39,7 +39,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("audio player started initialized");
 
     let (update_tx, _) = tokio::sync::broadcast::channel(2048);
-    let orchestrator = ProviderOrchestrator::init("").await.unwrap();
+    let orchestrator = ProviderOrchestrator::init("")
+        .await
+        .expect("failed to init orchestrator");
 
     let playback = Playback::new(update_tx.clone(), orchestrator.provider_tx.clone());
 
@@ -76,44 +78,51 @@ fn poll_play_bus(rx: flume::Receiver<PlayerMessage>, tx: flume::Sender<PlaybackM
         let span = debug_span!("play-chan");
         match msg {
             PlayerMessage::EndOfStream => {
-                tx.send(PlaybackMessage::Next { span }).unwrap();
+                if let Err(err) = tx.send(PlaybackMessage::Next { span }) {
+                    error!("failed to send next message: {}", err);
+                }
             }
             PlayerMessage::Stopped => {
-                tx.send(PlaybackMessage::StateChanged {
+                if let Err(err) = tx.send(PlaybackMessage::StateChanged {
                     state: PlayState::Stopped,
                     span,
-                })
-                .unwrap();
+                }) {
+                    error!("failed to send stopped message: {}", err);
+                }
             }
             PlayerMessage::Paused => {
-                tx.send(PlaybackMessage::StateChanged {
+                if let Err(err) = tx.send(PlaybackMessage::StateChanged {
                     state: PlayState::Paused,
                     span,
-                })
-                .unwrap();
+                }) {
+                    error!("failed to send paused message: {}", err);
+                }
             }
             PlayerMessage::Playing => {
-                tx.send(PlaybackMessage::StateChanged {
+                if let Err(err) = tx.send(PlaybackMessage::StateChanged {
                     state: PlayState::Playing,
                     span,
-                })
-                .unwrap();
+                }) {
+                    error!("failed to send playing message: {}", err);
+                }
             }
             PlayerMessage::Elapsed { duration, elapsed } => {
-                tx.send(PlaybackMessage::PostitionChanged {
+                if let Err(err) = tx.send(PlaybackMessage::PostitionChanged {
                     duration: duration.as_millis() as u32,
                     position: elapsed.as_millis() as u32,
                     span,
-                })
-                .unwrap();
+                }) {
+                    error!("failed to send elapsed message: {}", err);
+                }
             }
             PlayerMessage::Duration { duration } => {
-                tx.send(PlaybackMessage::PostitionChanged {
+                if let Err(err) = tx.send(PlaybackMessage::PostitionChanged {
                     duration: duration.as_millis() as u32,
                     position: 0,
                     span,
-                })
-                .unwrap();
+                }) {
+                    error!("failed to send duration message: {}", err);
+                }
             }
         }
     }

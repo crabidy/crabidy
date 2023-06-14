@@ -16,7 +16,11 @@ pub struct QueueManager {
 impl From<QueueManager> for Queue {
     fn from(queue_manager: QueueManager) -> Self {
         Self {
-            timestamp: queue_manager.created_at.elapsed().unwrap().as_secs(),
+            timestamp: queue_manager
+                .created_at
+                .elapsed()
+                .expect("failed to get elapsed time")
+                .as_secs(),
             current_position: queue_manager.current_position() as u32,
             tracks: queue_manager.tracks,
         }
@@ -164,16 +168,20 @@ impl QueueManager {
         }
         let pos = self.current_position();
         let order_additions: Vec<usize> = (len..len + tracks.len()).collect();
+        debug!(
+            "extending play of len {:#?} with {:#?}",
+            len, order_additions
+        );
         self.play_order.extend(order_additions);
         let tail: Vec<Track> = self
             .tracks
             .splice((self.current_position() + 1).., tracks.to_vec())
             .collect();
         self.tracks.extend(tail);
-        self.play_order
-            .iter_mut()
-            .filter(|i| (pos as usize) < **i)
-            .for_each(|i| *i += len);
+        // self.play_order
+        //     .iter_mut()
+        //     .filter(|i| (pos as usize) < **i)
+        //     .for_each(|i| *i += len);
         if self.shuffle {
             self.shuffle_behind(self.current_offset);
         }
