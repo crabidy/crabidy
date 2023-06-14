@@ -143,20 +143,22 @@ impl Playback {
                             }
                         }
                         trace!("got tracks {:?}", all_tracks);
-                        {
+                        let track = {
                             let Ok(mut queue) = self.queue.lock() else {
                                 debug!("got queue lock");
                                 continue;
                             };
                             debug!("got queue lock");
-                            queue.queue_tracks(&all_tracks);
+                            let track = queue.queue_tracks(&all_tracks);
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
                                 trace!("{:?}", err)
                             }
-                        }
+                            track
+                        };
                         debug!("que lock released");
+                        self.play(track).in_current_span().await;
                     }
 
                     PlaybackMessage::Append { uuids, span } => {
@@ -174,20 +176,22 @@ impl Playback {
                             }
                         }
                         trace!("got tracks {:?}", all_tracks);
-                        {
+                        let track = {
                             let Ok(mut queue) = self.queue.lock() else {
                                 debug!("got queue lock");
                                 continue;
                             };
                             debug!("got queue lock");
-                            queue.append_tracks(&all_tracks);
+                            let track = queue.append_tracks(&all_tracks);
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
                                 trace!("{:?}", err)
                             }
-                        }
+                            track
+                        };
                         debug!("queue lock released");
+                        self.play(track).in_current_span().await;
                     }
 
                     PlaybackMessage::Remove { positions, span } => {
@@ -247,20 +251,22 @@ impl Playback {
                             }
                         }
                         trace!("got tracks {:?}", all_tracks);
-                        {
+                        let track = {
                             let Ok(mut queue) = self.queue.lock() else {
                                 debug!("got queue lock");
                                 continue;
                             };
                             debug!("got queue lock");
-                            queue.insert_tracks(position, &all_tracks);
+                            let track = queue.insert_tracks(position, &all_tracks);
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
                                 trace!("{:?}", err)
                             };
-                        }
+                            track
+                        };
                         debug!("queue lock released");
+                        self.play(track).in_current_span().await;
                     }
 
                     PlaybackMessage::Clear {

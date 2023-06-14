@@ -159,13 +159,19 @@ impl QueueManager {
         }
     }
 
-    pub fn append_tracks(&mut self, tracks: &[Track]) {
+    pub fn append_tracks(&mut self, tracks: &[Track]) -> Option<Track> {
         let len = self.tracks.len();
+        let is_empty = len == 0;
         let order_additions: Vec<usize> = (len..len + tracks.len()).collect();
         self.play_order.extend(order_additions);
         self.tracks.extend(tracks.iter().cloned());
         if self.shuffle {
             self.shuffle_behind(self.current_offset);
+        }
+        if is_empty {
+            self.current_track()
+        } else {
+            None
         }
     }
 
@@ -204,11 +210,10 @@ impl QueueManager {
         }
     }
 
-    pub fn insert_tracks(&mut self, position: u32, tracks: &[Track]) {
+    pub fn insert_tracks(&mut self, position: u32, tracks: &[Track]) -> Option<Track> {
         let len = self.tracks.len();
         if len == 0 {
-            self.replace_with_tracks(tracks);
-            return;
+            return self.replace_with_tracks(tracks);
         }
         let order_additions: Vec<usize> = (len..len + tracks.len()).collect();
         self.play_order.extend(order_additions);
@@ -248,11 +253,12 @@ impl QueueManager {
         if self.shuffle {
             self.shuffle_behind(self.current_offset);
         }
+        None
     }
 
-    pub fn queue_tracks(&mut self, tracks: &[Track]) {
+    pub fn queue_tracks(&mut self, tracks: &[Track]) -> Option<Track> {
         let pos = self.current_position();
-        self.insert_tracks(pos as u32, tracks);
+        self.insert_tracks(pos as u32, tracks)
     }
 
     pub fn clear(&mut self, exclude_current: bool) -> bool {
