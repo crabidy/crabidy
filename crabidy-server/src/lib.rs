@@ -160,33 +160,6 @@ impl QueueManager {
         }
     }
 
-    pub fn queue_tracks(&mut self, tracks: &[Track]) {
-        let len = self.tracks.len();
-        if len == 0 {
-            self.replace_with_tracks(tracks);
-            return;
-        }
-        let pos = self.current_position();
-        let order_additions: Vec<usize> = (len..len + tracks.len()).collect();
-        debug!(
-            "extending play of len {:#?} with {:#?}",
-            len, order_additions
-        );
-        self.play_order.extend(order_additions);
-        let tail: Vec<Track> = self
-            .tracks
-            .splice((self.current_position() + 1).., tracks.to_vec())
-            .collect();
-        self.tracks.extend(tail);
-        // self.play_order
-        //     .iter_mut()
-        //     .filter(|i| (pos as usize) < **i)
-        //     .for_each(|i| *i += len);
-        if self.shuffle {
-            self.shuffle_behind(self.current_offset);
-        }
-    }
-
     pub fn remove_tracks(&mut self, positions: &[u32]) -> Option<Track> {
         let mut play_next = false;
         for pos in positions {
@@ -224,6 +197,10 @@ impl QueueManager {
 
     pub fn insert_tracks(&mut self, position: u32, tracks: &[Track]) {
         let len = self.tracks.len();
+        if len == 0 {
+            self.replace_with_tracks(tracks);
+            return;
+        }
         let order_additions: Vec<usize> = (len..len + tracks.len()).collect();
         self.play_order.extend(order_additions);
         let tail: Vec<Track> = self
@@ -231,9 +208,42 @@ impl QueueManager {
             .splice((position as usize + 1).., tracks.to_vec())
             .collect();
         self.tracks.extend(tail);
+        let mut changed: Vec<usize> = Vec::new();
+        // in shuffle mode, it might be that we played already postions which are behind
+        // the insertion point and which postions are shifted by the lenght of the inserted
+        // track
+        for i in self
+            .play_order
+            .iter_mut()
+            .take(self.current_offset)
+            .filter(|i| (position as usize) < **i)
+        {
+            *i += len;
+            changed.push(*i);
+        }
+        if !self.shuffle {
+            // if we don't shuffle, there should be no positions alredy played behind the
+            // current track
+            assert!(changed.is_empty());
+        }
+        // the newly inserted indices need to replaced with the ones that we already handled
+        self.play_order
+            .iter_mut()
+            .skip(self.current_offset)
+            .for_each(|i| {
+                if changed.contains(i) {
+                    *i -= len;
+                }
+            });
+
         if self.shuffle {
             self.shuffle_behind(self.current_offset);
         }
+    }
+
+    pub fn queue_tracks(&mut self, tracks: &[Track]) {
+        let pos = self.current_position();
+        self.insert_tracks(pos as u32, tracks);
     }
 
     pub fn clear(&mut self, exclude_current: bool) -> bool {
