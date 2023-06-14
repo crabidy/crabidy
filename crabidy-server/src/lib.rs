@@ -58,7 +58,13 @@ impl QueueManager {
 
     pub fn shuffle_off(&mut self) {
         self.shuffle = false;
+        let pos = self.current_position();
+        self.current_offset = pos;
         self.play_order = (0..self.tracks.len()).collect();
+        debug!(
+            "offset: {}, order: {:?}",
+            self.current_offset, self.play_order
+        );
     }
 
     pub fn shuffle_all(&mut self) {

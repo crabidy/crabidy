@@ -513,6 +513,7 @@ impl Playback {
 
     #[instrument(skip(self))]
     async fn flatten_node(&self, uuid: &str) -> Vec<Track> {
+        debug!("flattening node");
         let tx = self.provider_tx.clone();
         let (result_tx, result_rx) = flume::bounded(1);
         let span = debug_span!("prov-chan");
@@ -555,6 +556,7 @@ impl Playback {
 
     #[instrument(skip(self))]
     async fn get_urls_for_track(&self, uuid: &str) -> Result<Vec<String>, ProviderError> {
+        debug!("getting urls for track");
         let tx = self.provider_tx.clone();
         let (result_tx, result_rx) = flume::bounded(1);
         let span = tracing::trace_span!("prov-chan");
@@ -575,6 +577,7 @@ impl Playback {
 
     #[instrument(skip(self))]
     async fn play_or_stop(&self, track: Option<Track>) {
+        debug!("play or stop");
         if let Some(track) = track {
             let mut uuid = track.uuid.clone();
             let urls = loop {
@@ -621,6 +624,7 @@ impl Playback {
 
     #[instrument(skip(self))]
     async fn play(&self, track: Option<Track>) {
+        debug!("play");
         if let Some(track) = track {
             let mut uuid = track.uuid.clone();
             let urls = loop {

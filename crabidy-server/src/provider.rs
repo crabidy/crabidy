@@ -132,6 +132,7 @@ impl ProviderClient for ProviderOrchestrator {
     }
     #[instrument(skip(self))]
     async fn get_urls_for_track(&self, track_uuid: &str) -> Result<Vec<String>, ProviderError> {
+        debug!("get_urls_for_track");
         self.tidal_client
             .get_urls_for_track(track_uuid)
             .in_current_span()
