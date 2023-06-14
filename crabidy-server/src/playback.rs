@@ -120,7 +120,7 @@ impl Playback {
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
-                                error!("{:?}", err)
+                                trace!("{:?}", err)
                             };
                             queue.current_track()
                         };
@@ -153,7 +153,7 @@ impl Playback {
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
-                                error!("{:?}", err)
+                                trace!("{:?}", err)
                             }
                         }
                         debug!("que lock released");
@@ -184,7 +184,7 @@ impl Playback {
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
-                                error!("{:?}", err)
+                                trace!("{:?}", err)
                             }
                         }
                         debug!("queue lock released");
@@ -205,7 +205,7 @@ impl Playback {
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
-                                error!("{:?}", err)
+                                trace!("{:?}", err)
                             };
                             track
                         };
@@ -257,7 +257,7 @@ impl Playback {
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
-                                error!("{:?}", err)
+                                trace!("{:?}", err)
                             };
                         }
                         debug!("queue lock released");
@@ -279,7 +279,7 @@ impl Playback {
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
                             if let Err(err) = queue_update_tx.send(update) {
-                                error!("{:?}", err)
+                                trace!("{:?}", err)
                             };
                             should_stop
                         };
@@ -333,7 +333,7 @@ impl Playback {
                         let queue_update_tx = self.update_tx.clone();
                         let update = StreamUpdate::Mods(QueueModifiers { shuffle, repeat });
                         if let Err(err) = queue_update_tx.send(update) {
-                            error!("{:?}", err)
+                            trace!("{:?}", err)
                         }
                     }
 
@@ -360,7 +360,7 @@ impl Playback {
                         let queue_update_tx = self.update_tx.clone();
                         let update = StreamUpdate::Mods(QueueModifiers { shuffle, repeat });
                         if let Err(err) = queue_update_tx.send(update) {
-                            error!("{:?}", err)
+                            trace!("{:?}", err)
                         }
                     }
 
@@ -461,7 +461,7 @@ impl Playback {
                         let active_track_tx = self.update_tx.clone();
                         let update = StreamUpdate::PlayState(play_state as i32);
                         if let Err(err) = active_track_tx.send(update) {
-                            error!("{:?}", err)
+                            trace!("{:?}", err)
                         };
                     }
 
@@ -479,7 +479,7 @@ impl Playback {
                         let update_tx = self.update_tx.clone();
                         let update = StreamUpdate::Volume(volume);
                         if let Err(err) = update_tx.send(update) {
-                            error!("{:?}", err)
+                            trace!("{:?}", err)
                         }
                     }
 
@@ -489,7 +489,7 @@ impl Playback {
                         let update_tx = self.update_tx.clone();
                         let update = StreamUpdate::Mute(muted);
                         if let Err(err) = update_tx.send(update) {
-                            error!("{:?}", err)
+                            trace!("{:?}", err)
                         }
                     }
 
@@ -503,7 +503,7 @@ impl Playback {
                         let update_tx = self.update_tx.clone();
                         let update = StreamUpdate::Position(TrackPosition { duration, position });
                         if let Err(err) = update_tx.send(update) {
-                            error!("{:?}", err)
+                            trace!("{:?}", err)
                         }
                     }
                 }
@@ -611,7 +611,7 @@ impl Playback {
                     track,
                 });
                 if let Err(err) = queue_update_tx.send(update) {
-                    error!("{:?}", err)
+                    trace!("{:?}", err)
                 }
             }
             if let Err(err) = self.player.play(&urls[0]).await {
@@ -658,7 +658,7 @@ impl Playback {
                     track,
                 });
                 if let Err(err) = queue_update_tx.send(update) {
-                    error!("{:?}", err)
+                    trace!("{:?}", err)
                 }
             }
             if let Err(err) = self.player.play(&urls[0]).await {
