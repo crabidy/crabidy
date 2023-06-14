@@ -79,6 +79,9 @@ impl QueueManager {
 
     pub fn next_track(&mut self) -> Option<Track> {
         let len = self.tracks.len();
+        if len == 0 {
+            return None;
+        };
         if self.current_offset < len - 1 {
             self.current_offset += 1;
             let current_pos = self.current_position();
