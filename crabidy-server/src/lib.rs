@@ -46,6 +46,10 @@ impl QueueManager {
         }
     }
 
+    pub fn is_last_track(&self) -> bool {
+        self.current_position() == self.tracks.len() - 1
+    }
+
     pub fn shuffle_on(&mut self) {
         self.shuffle = true;
         self.shuffle_before(self.current_offset);

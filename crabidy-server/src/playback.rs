@@ -192,6 +192,7 @@ impl Playback {
 
                     PlaybackMessage::Remove { positions, span } => {
                         let _e = span.enter();
+                        let is_last;
                         debug!("removing");
                         let track = {
                             let Ok(mut queue) = self.queue.lock() else {
@@ -199,6 +200,7 @@ impl Playback {
                                 continue;
                             };
                             debug!("got queue lock");
+                            is_last = queue.is_last_track();
                             let track = queue.remove_tracks(&positions);
                             let queue_update_tx = self.update_tx.clone();
                             let update = StreamUpdate::Queue(queue.clone().into());
@@ -216,7 +218,13 @@ impl Playback {
                             *state
                         };
                         if state == PlayState::Playing {
-                            self.play(track).in_current_span().await;
+                            if is_last {
+                                if let Err(err) = self.player.stop().in_current_span().await {
+                                    error!("{:?}", err)
+                                }
+                            } else {
+                                self.play(track).in_current_span().await;
+                            }
                         }
                     }
 
