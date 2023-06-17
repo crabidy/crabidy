@@ -1,9 +1,11 @@
+use std::fmt::format;
+
 /// Lots of stuff and especially the auth handling is shamelessly copied from
 /// https://github.com/MinisculeGirraffe/tdl
 use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
 use tokio::time::{sleep, Duration, Instant};
-use tracing::{debug, instrument};
+use tracing::{debug, error, info, instrument};
 pub mod config;
 pub mod models;
 use async_trait::async_trait;
@@ -75,13 +77,20 @@ impl crabidy_core::ProviderClient for Client {
 
     #[instrument(skip(self))]
     fn get_lib_root(&self) -> crabidy_core::proto::crabidy::LibraryNode {
-        debug!("get_lib_root");
+        debug!("get_lib_root in tidaldy");
         let global_root = crabidy_core::proto::crabidy::LibraryNode::new();
-        let children = vec![crabidy_core::proto::crabidy::LibraryNodeChild::new(
-            "node:userplaylists".to_string(),
-            "playlists".to_string(),
-            false,
-        )];
+        let children = vec![
+            crabidy_core::proto::crabidy::LibraryNodeChild::new(
+                "node:userplaylists".to_string(),
+                "playlists".to_string(),
+                false,
+            ),
+            crabidy_core::proto::crabidy::LibraryNodeChild::new(
+                "node:userartists".to_string(),
+                "artists".to_string(),
+                false,
+            ),
+        ];
         crabidy_core::proto::crabidy::LibraryNode {
             uuid: "node:tidal".to_string(),
             title: "tidal".to_string(),
@@ -100,8 +109,9 @@ impl crabidy_core::ProviderClient for Client {
         let Some(user_id) = self.settings.login.user_id.clone() else {
           return Err(crabidy_core::ProviderError::UnknownUser)
     };
-        debug!("get_lib_node {}", uuid);
+        debug!("get_lib_node in tidaldy{}", uuid);
         let (_kind, module, uuid) = split_uuid(uuid);
+        error!("module:{},uuid: {}", module, uuid);
         let node = match module.as_str() {
             "userplaylists" => {
                 let mut node = crabidy_core::proto::crabidy::LibraryNode {
@@ -138,6 +148,53 @@ impl crabidy_core::ProviderClient for Client {
                 node.parent = Some("node:userplaylists".to_string());
                 node
             }
+            "userartists" => {
+                let mut node = crabidy_core::proto::crabidy::LibraryNode {
+                    uuid: "node:userartists".to_string(),
+                    title: "artists".to_string(),
+                    parent: Some("node:tidal".to_string()),
+                    tracks: Vec::new(),
+                    children: Vec::new(),
+                    is_queable: false,
+                };
+                for artist in self.get_users_artists(&user_id).await? {
+                    let child = crabidy_core::proto::crabidy::LibraryNodeChild::new(
+                        format!("node:artist:{}", artist.item.id),
+                        artist.item.name,
+                        true,
+                    );
+                    node.children.push(child);
+                }
+                node
+            }
+            "artist" => {
+                info!("artist");
+                let mut node: crabidy_core::proto::crabidy::LibraryNode =
+                    self.get_artist(&uuid).await?.into();
+                let children: Vec<crabidy_core::proto::crabidy::LibraryNodeChild> = self
+                    .get_artist_albums(&uuid)
+                    .await?
+                    .iter()
+                    .map(|t| t.into())
+                    .collect();
+                node.children = children;
+                node.parent = Some("node:userartists".to_string());
+                node
+            }
+            "album" => {
+                let album = self.get_album(&uuid).await?;
+                let artis_id = album.artist.clone().unwrap().id;
+                let mut node: crabidy_core::proto::crabidy::LibraryNode = album.into();
+                let tracks: Vec<crabidy_core::proto::crabidy::Track> = self
+                    .get_album_tracks(&uuid)
+                    .await?
+                    .iter()
+                    .map(|t| t.into())
+                    .collect();
+                node.tracks = tracks;
+                node.parent = Some(format!("node:artist:{}", artis_id));
+                node
+            }
             _ => return Err(crabidy_core::ProviderError::MalformedUuid),
         };
         Ok(node)
@@ -166,17 +223,18 @@ impl Client {
         })
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub fn get_user_id(&self) -> Option<String> {
         self.settings.login.user_id.clone()
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn make_request<T: DeserializeOwned>(
         &self,
         uri: &str,
         query: Option<&[(&str, String)]>,
     ) -> Result<T, ClientError> {
+        debug!("make_request {}", uri);
         let Some(ref access_token) = self.settings.login.access_token.clone() else {
             return Err(ClientError::AuthError(
                 "No access token found".to_string(),
@@ -199,18 +257,27 @@ impl Client {
             .bearer_auth(access_token)
             .query(&params)
             .send()
-            .await?
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?
             .json()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?;
         Ok(response)
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn make_paginated_request<T: DeserializeOwned>(
         &self,
         uri: &str,
         query: Option<&[(&str, String)]>,
     ) -> Result<Vec<T>, ClientError> {
+        debug!("make_paginated_request {}", uri);
         let Some(ref access_token) = self.settings.login.access_token.clone() else {
             return Err(ClientError::AuthError(
                 "No access token found".to_string(),
@@ -236,9 +303,17 @@ impl Client {
             .bearer_auth(access_token)
             .query(&params)
             .send()
-            .await?
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?
             .json()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?;
         let mut items = Vec::with_capacity(response.total_number_of_items);
         items.extend(response.items);
         while response.offset + limit < response.total_number_of_items {
@@ -255,15 +330,23 @@ impl Client {
                 .bearer_auth(access_token)
                 .query(&params)
                 .send()
-                .await?
+                .await
+                .map_err(|e| {
+                    error!("{:?}", e);
+                    e
+                })?
                 .json()
-                .await?;
+                .await
+                .map_err(|e| {
+                    error!("{:?}", e);
+                    e
+                })?;
             items.extend(response.items);
         }
         Ok(items)
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn make_explorer_request(
         &self,
         uri: &str,
@@ -291,14 +374,22 @@ impl Client {
             .bearer_auth(access_token)
             .query(&params)
             .send()
-            .await?
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?
             .text()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?;
         println!("{:?}", response);
         Ok(())
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn search(&self, query: &str) -> Result<(), ClientError> {
         let query = vec![("query", query.to_string())];
         self.make_explorer_request(&format!("search/artists"), Some(&query))
@@ -306,7 +397,7 @@ impl Client {
         Ok(())
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn get_playlist_tracks(
         &self,
         playlist_uuid: &str,
@@ -316,21 +407,35 @@ impl Client {
             .await?)
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn get_playlist(&self, playlist_uuid: &str) -> Result<Playlist, ClientError> {
         Ok(self
             .make_request(&format!("playlists/{}", playlist_uuid), None)
             .await?)
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
+    pub async fn get_artist(&self, artist_uuid: &str) -> Result<Artist, ClientError> {
+        Ok(self
+            .make_request(&format!("artists/{}", artist_uuid), None)
+            .await?)
+    }
+
+    #[instrument(skip(self))]
+    pub async fn get_artist_albums(&self, artist_uuid: &str) -> Result<Vec<Album>, ClientError> {
+        Ok(self
+            .make_paginated_request(&format!("artists/{}/albums", artist_uuid), None)
+            .await?)
+    }
+
+    #[instrument(skip(self))]
     pub async fn get_users_playlists(&self, user_id: u64) -> Result<Vec<Playlist>, ClientError> {
         Ok(self
             .make_paginated_request(&format!("users/{}/playlists", user_id), None)
             .await?)
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn get_users_playlists_and_favorite_playlists(
         &self,
         user_id: &str,
@@ -343,25 +448,7 @@ impl Client {
             .await?)
     }
 
-    #[instrument]
-    pub async fn explore_get_users_playlists_and_favorite_playlists(
-        &self,
-        user_id: u64,
-    ) -> Result<(), ClientError> {
-        let limit = 50;
-        let offset = 0;
-        let limit_param = ("limit", limit.to_string());
-        let offset_param = ("offset", offset.to_string());
-        let params: Vec<(&str, String)> = vec![limit_param, offset_param];
-        self.make_explorer_request(
-            &format!("users/{}/playlistsAndFavoritePlaylists", user_id),
-            Some(&params[..]),
-        )
-        .await?;
-        Ok(())
-    }
-
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn get_users_favorites(&self, user_id: u64) -> Result<(), ClientError> {
         self.make_explorer_request(
             &format!("users/{}/favorites", user_id),
@@ -372,7 +459,18 @@ impl Client {
         Ok(())
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
+    pub async fn get_users_artists(&self, user_id: &str) -> Result<Vec<ArtistItem>, ClientError> {
+        Ok(self
+            .make_paginated_request(
+                &format!("users/{}/favorites/artists", user_id),
+                None,
+                // Some(&query),
+            )
+            .await?)
+    }
+
+    #[instrument(skip(self))]
     pub async fn get_user(&self, user_id: u64) -> Result<(), ClientError> {
         self.make_explorer_request(
             &format!("users/{}", user_id),
@@ -383,7 +481,19 @@ impl Client {
         Ok(())
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
+    pub async fn get_album(&self, album_id: &str) -> Result<Album, ClientError> {
+        self.make_request(&format!("albums/{}/", album_id), None)
+            .await
+    }
+
+    #[instrument(skip(self))]
+    pub async fn get_album_tracks(&self, album_id: &str) -> Result<Vec<Track>, ClientError> {
+        self.make_paginated_request(&format!("albums/{}/tracks", album_id), None)
+            .await
+    }
+
+    #[instrument(skip(self))]
     pub async fn get_track_playback(&self, track_id: &str) -> Result<TrackPlayback, ClientError> {
         let query = vec![
             ("audioquality", "LOSSLESS".to_string()),
@@ -397,14 +507,14 @@ impl Client {
         .await
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn get_track(&self, track_id: &str) -> Result<Track, ClientError> {
         let (_, track_id, _) = split_uuid(track_id);
         self.make_request(&format!("tracks/{}", track_id), None)
             .await
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn login_web(&mut self) -> Result<(), ClientError> {
         let code_response = self.get_device_code().await?;
         let now = Instant::now();
@@ -443,7 +553,11 @@ impl Client {
             .get(format!("{}/sessions", self.settings.base_url))
             .bearer_auth(access_token)
             .send()
-            .await?
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?
             .status()
             .is_success()
         {
@@ -459,7 +573,7 @@ impl Client {
         Ok(())
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn refresh_access_token(&self) -> Result<RefreshResponse, ClientError> {
         let Some(refresh_token) = self.settings.login.refresh_token.clone() else {
         return Err(ClientError::AuthError(
@@ -485,7 +599,11 @@ impl Client {
             )
             .header("Content-Type", "application/x-www-form-urlencoded")
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?;
         if req.status().is_success() {
             let res = req.json::<RefreshResponse>().await?;
             Ok(res)
@@ -495,7 +613,7 @@ impl Client {
             ))
         }
     }
-    #[instrument]
+    #[instrument(skip(self))]
     async fn get_device_code(&self) -> Result<DeviceAuthResponse, ClientError> {
         let req = DeviceAuthRequest {
             client_id: self.settings.oauth.client_id.clone(),
@@ -512,7 +630,11 @@ impl Client {
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(payload)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?;
 
         if !res.status().is_success() {
             return Err(ClientError::AuthError(res.status().to_string()));
@@ -521,7 +643,7 @@ impl Client {
         Ok(code)
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn check_auth_status(
         &self,
         device_code: &str,
@@ -544,7 +666,11 @@ impl Client {
             .body(payload)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                error!("{:?}", e);
+                e
+            })?;
         if !res.status().is_success() {
             if res.status().is_client_error() {
                 return Err(ClientError::AuthError(format!(
@@ -564,25 +690,26 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
+    use crabidy_core::ProviderClient;
+
     use super::*;
 
-    fn setup() -> Client {
-        let settings = crate::config::Settings::default();
-        Client::new(settings).expect("could not create tidaldy client")
+    async fn setup() -> Client {
+        let raw_toml_settings =
+            std::fs::read_to_string("/home/hans/.config/crabidy/tidaldy.toml").unwrap();
+        Client::init(&raw_toml_settings).await.unwrap()
     }
 
     #[tokio::test]
-    async fn test_get_device_code() {
-        let client = setup();
-        println!("{:#?}", client);
-        let response = client.get_device_code().await.unwrap();
-        assert!(!response.device_code.is_empty());
-        assert_eq!(response.device_code.len(), 36);
-        assert!(!response.user_code.is_empty());
-        assert_eq!(response.user_code.len(), 5);
-        assert!(!response.verification_uri.is_empty());
-        assert!(!response.verification_uri_complete.is_empty());
-        assert!(response.expires_in == 300);
-        assert!(response.interval != 0);
+    async fn test() {
+        let client = setup().await;
+        let user = client.settings.login.user_id.clone().unwrap();
+        let result = client.get_users_artists(&user).await.unwrap();
+        println!("{:?}", result);
+        let result = client.get_artist("5293333").await.unwrap();
+        println!("{:?}", result);
+        let result = client.get_album("244167550").await.unwrap();
+        println!("{:?}", result);
+        assert!(false);
     }
 }

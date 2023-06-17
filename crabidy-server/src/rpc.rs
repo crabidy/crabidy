@@ -91,10 +91,16 @@ impl CrabidyService for RpcService {
             .recv_async()
             .in_current_span()
             .await
-            .map_err(|_| Status::internal("Failed to receive response from provider channel"))?;
+            .map_err(|e| {
+                error!("{:?}", e);
+                Status::internal("Failed to receive response from provider channel")
+            })?;
         match result {
             Ok(node) => Ok(Response::new(GetLibraryNodeResponse { node: Some(node) })),
-            Err(err) => Err(Status::internal(err.to_string())),
+            Err(err) => {
+                error!("{:?}", err);
+                Err(Status::internal(err.to_string()))
+            }
         }
     }
 

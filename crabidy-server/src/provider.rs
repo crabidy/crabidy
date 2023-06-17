@@ -148,6 +148,7 @@ impl ProviderClient for ProviderOrchestrator {
     }
     #[instrument(skip(self))]
     fn get_lib_root(&self) -> LibraryNode {
+        debug!("get_lib_root in provider manager");
         let mut root_node = LibraryNode::new();
         let child = LibraryNodeChild::new("node:tidal".to_owned(), "tidal".to_owned(), false);
         root_node.children.push(child);
@@ -155,13 +156,16 @@ impl ProviderClient for ProviderOrchestrator {
     }
     #[instrument(skip(self))]
     async fn get_lib_node(&self, uuid: &str) -> Result<LibraryNode, ProviderError> {
-        debug!("get_lib_node");
+        debug!("get_lib_node in provider manager");
         if uuid == "node:/" {
+            debug!("get global root");
             return Ok(self.get_lib_root());
         }
         if uuid == "node:tidal" {
+            debug!("get tidal root");
             return Ok(self.tidal_client.get_lib_root());
         }
+        debug!("tidal node");
         self.tidal_client.get_lib_node(uuid).in_current_span().await
     }
 }

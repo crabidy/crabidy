@@ -3,7 +3,7 @@ use crabidy_core::proto::crabidy::{
     crabidy_service_server::CrabidyServiceServer, InitResponse, LibraryNode, PlayState, Track,
 };
 use crabidy_core::{ProviderClient, ProviderError};
-use tracing::{debug_span, error, info, instrument, warn, Span};
+use tracing::{debug_span, error, info, instrument, level_filters, warn, Span};
 use tracing_subscriber::{filter::Targets, prelude::*};
 
 mod playback;
@@ -22,8 +22,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stderr());
 
-    let targets_filter =
-        Targets::new().with_target("crabidy_server", tracing::level_filters::LevelFilter::DEBUG);
+    let targets_filter = Targets::new()
+        .with_target("crabidy_server", tracing::level_filters::LevelFilter::DEBUG)
+        .with_target("tidaldy", level_filters::LevelFilter::DEBUG);
     let subscriber = tracing_subscriber::fmt::layer()
         .with_writer(non_blocking)
         .with_file(true)

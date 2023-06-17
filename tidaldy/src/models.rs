@@ -1,5 +1,6 @@
 use std::{str::FromStr, string::FromUtf8Error};
 
+use crabidy_core::proto::crabidy::{LibraryNode, LibraryNodeChild};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -15,15 +16,58 @@ pub struct Page<T> {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Item {
+pub struct ArtistItem {
+    pub created: String,
+    pub item: Artist,
+}
+
+impl From<ArtistItem> for LibraryNode {
+    fn from(item: ArtistItem) -> Self {
+        Self {
+            uuid: format!("artist:{}", item.item.id),
+            title: item.item.name,
+            children: Vec::new(),
+            parent: None,
+            tracks: Vec::new(),
+            is_queable: true,
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Artist {
     pub id: i64,
     pub name: String,
-    pub artist_types: Vec<String>,
-    pub url: String,
-    pub picture: Value,
-    pub popularity: i64,
-    pub artist_roles: Vec<ArtistRole>,
-    pub mixes: Mixes,
+    pub artist_types: Option<Vec<String>>,
+    pub url: Option<String>,
+    pub picture: Option<Value>,
+    pub popularity: Option<i64>,
+    pub artist_roles: Option<Vec<ArtistRole>>,
+    pub mixes: Option<ArtistMixes>,
+}
+
+impl From<Artist> for LibraryNode {
+    fn from(artist: Artist) -> Self {
+        Self {
+            uuid: format!("node:artist:{}", artist.id),
+            title: artist.name,
+            children: Vec::new(),
+            parent: None,
+            tracks: Vec::new(),
+            is_queable: true,
+        }
+    }
+}
+
+impl From<Artist> for LibraryNodeChild {
+    fn from(artist: Artist) -> Self {
+        Self {
+            uuid: format!("node:artist:{}", artist.id),
+            title: artist.name,
+            is_queable: true,
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -126,43 +170,76 @@ impl TrackPlayback {
     }
 }
 
+// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct Track {
+//     pub id: u64,
+//     pub title: String,
+//     pub duration: u64,
+//     pub replay_gain: f64,
+//     pub peak: f64,
+//     pub allow_streaming: bool,
+//     pub stream_ready: bool,
+//     pub stream_start_date: Option<String>,
+//     pub premium_streaming_only: bool,
+//     pub track_number: u64,
+//     pub volume_number: u64,
+//     pub version: Value,
+//     pub popularity: u64,
+//     pub copyright: Option<String>,
+//     pub url: Option<String>,
+//     pub isrc: Option<String>,
+//     pub editable: bool,
+//     pub explicit: bool,
+//     pub audio_quality: String,
+//     pub audio_modes: Vec<String>,
+//     pub artist: Artist,
+//     pub artists: Vec<Artist>,
+//     pub album: Album,
+//     pub mixes: TrackMixes,
+// }
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Track {
-    pub id: u64,
+    pub id: i64,
     pub title: String,
-    pub duration: u64,
-    pub replay_gain: f64,
-    pub peak: f64,
-    pub allow_streaming: bool,
-    pub stream_ready: bool,
+    pub duration: Option<i64>,
+    pub replay_gain: Option<f64>,
+    pub peak: Option<f64>,
+    pub allow_streaming: Option<bool>,
+    pub stream_ready: Option<bool>,
+    pub ad_supported_stream_ready: Option<bool>,
     pub stream_start_date: Option<String>,
-    pub premium_streaming_only: bool,
-    pub track_number: u64,
-    pub volume_number: u64,
-    pub version: Value,
-    pub popularity: u64,
+    pub premium_streaming_only: Option<bool>,
+    pub track_number: Option<i64>,
+    pub volume_number: Option<i64>,
+    pub version: Option<Value>,
+    pub popularity: Option<i64>,
     pub copyright: Option<String>,
     pub url: Option<String>,
     pub isrc: Option<String>,
-    pub editable: bool,
-    pub explicit: bool,
-    pub audio_quality: String,
-    pub audio_modes: Vec<String>,
-    pub artist: Artist,
-    pub artists: Vec<Artist>,
-    pub album: Album,
-    pub mixes: Mixes,
+    pub editable: Option<bool>,
+    pub explicit: Option<bool>,
+    pub audio_quality: Option<String>,
+    pub audio_modes: Option<Vec<String>>,
+    pub media_metadata: Option<MediaMetadata>,
+    pub artist: Option<Artist>,
+    pub artists: Option<Vec<Artist>>,
+    pub album: Option<Album>,
+    pub mixes: Option<TrackMixes>,
 }
-
 impl From<Track> for crabidy_core::proto::crabidy::Track {
     fn from(track: Track) -> Self {
         Self {
             uuid: format!("track:{}", track.id),
             title: track.title,
-            artist: track.artist.name,
-            album: Some(track.album.into()),
-            duration: Some(track.duration as u32 * 1000),
+            artist: match track.artist {
+                Some(a) => a.name.clone(),
+                None => "".to_string(),
+            },
+            album: track.album.map(|a| a.into()),
+            duration: track.duration.map(|d| d as u32 * 1000),
         }
     }
 }
@@ -172,42 +249,143 @@ impl From<&Track> for crabidy_core::proto::crabidy::Track {
         Self {
             uuid: format!("track:{}", track.id),
             title: track.title.clone(),
-            artist: track.artist.name.clone(),
-            album: Some(track.album.clone().into()),
-            duration: Some(track.duration as u32),
+            artist: match track.artist.as_ref() {
+                Some(a) => a.name.clone(),
+                None => "".to_string(),
+            },
+            album: track.album.clone().map(|a| a.into()),
+            duration: track.duration.map(|d| d as u32 * 1000),
         }
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Artist {
-    pub id: i64,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub type_field: String,
-    pub picture: Value,
-}
+// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct Artist {
+//     pub id: i64,
+//     pub name: String,
+//     #[serde(rename = "type")]
+//     pub type_field: String,
+//     pub picture: Value,
+// }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Artist2 {
-    pub id: i64,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub type_field: String,
-    pub picture: Value,
-}
+// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct Artist2 {
+//     pub id: i64,
+//     pub name: String,
+//     #[serde(rename = "type")]
+//     pub type_field: String,
+//     pub picture: Value,
+// }
 
+// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct Album {
+//     pub id: i64,
+//     pub title: String,
+//     pub cover: String,
+//     pub vibrant_color: String,
+//     pub video_cover: Value,
+//     pub release_date: Option<String>,
+// }
+//
+// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct Root {
+//     pub id: i64,
+//     pub title: String,
+//     pub duration: i64,
+//     pub stream_ready: bool,
+//     pub ad_supported_stream_ready: bool,
+//     pub stream_start_date: String,
+//     pub allow_streaming: bool,
+//     pub premium_streaming_only: bool,
+//     pub number_of_tracks: i64,
+//     pub number_of_videos: i64,
+//     pub number_of_volumes: i64,
+//     pub release_date: String,
+//     pub copyright: String,
+//     #[serde(rename = "type")]
+//     pub type_field: String,
+//     pub version: Value,
+//     pub url: String,
+//     pub cover: String,
+//     pub vibrant_color: String,
+//     pub video_cover: Value,
+//     pub explicit: bool,
+//     pub upc: String,
+//     pub popularity: i64,
+//     pub audio_quality: String,
+//     pub audio_modes: Vec<String>,
+//     pub media_metadata: MediaMetadata,
+//     pub artist: Artist,
+//     pub artists: Vec<Artist2>,
+// }
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Album {
     pub id: i64,
     pub title: String,
-    pub cover: String,
-    pub vibrant_color: String,
-    pub video_cover: Value,
+    pub cover: Option<String>,
+    pub vibrant_color: Option<String>,
     pub release_date: Option<String>,
+    pub duration: Option<i64>,
+    pub stream_ready: Option<bool>,
+    pub ad_supported_stream_ready: Option<bool>,
+    pub stream_start_date: Option<String>,
+    pub allow_streaming: Option<bool>,
+    pub premium_streaming_only: Option<bool>,
+    pub number_of_tracks: Option<i64>,
+    pub number_of_videos: Option<i64>,
+    pub number_of_volumes: Option<i64>,
+    pub copyright: Option<String>,
+    #[serde(rename = "type")]
+    pub type_field: Option<String>,
+    pub version: Option<Value>,
+    pub url: Option<String>,
+    pub video_cover: Option<Value>,
+    pub explicit: Option<bool>,
+    pub upc: Option<String>,
+    pub popularity: Option<i64>,
+    pub audio_quality: Option<String>,
+    pub audio_modes: Option<Vec<String>>,
+    pub media_metadata: Option<MediaMetadata>,
+    pub artist: Option<Artist>,
+    pub artists: Option<Vec<Artist>>,
+}
+
+impl From<Album> for crabidy_core::proto::crabidy::LibraryNode {
+    fn from(album: Album) -> Self {
+        Self {
+            uuid: format!("node:album:{}", album.id),
+            title: album.title,
+            children: Vec::new(),
+            parent: None,
+            tracks: Vec::new(),
+            is_queable: true,
+        }
+    }
+}
+
+impl From<Album> for crabidy_core::proto::crabidy::LibraryNodeChild {
+    fn from(album: Album) -> Self {
+        Self {
+            uuid: format!("node:album:{}", album.id),
+            title: album.title,
+            is_queable: true,
+        }
+    }
+}
+
+impl From<&Album> for crabidy_core::proto::crabidy::LibraryNodeChild {
+    fn from(album: &Album) -> Self {
+        Self {
+            uuid: format!("node:album:{}", album.id),
+            title: album.title.clone(),
+            is_queable: true,
+        }
+    }
 }
 
 impl From<Album> for crabidy_core::proto::crabidy::Album {
@@ -221,9 +399,24 @@ impl From<Album> for crabidy_core::proto::crabidy::Album {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Mixes {
+pub struct MediaMetadata {
+    pub tags: Vec<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackMixes {
     #[serde(rename = "TRACK_MIX")]
     pub track_mix: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistMixes {
+    #[serde(rename = "MASTER_ARTIST_MIX")]
+    pub master_artist_mix: Option<String>,
+    #[serde(rename = "ARTIST_MIX")]
+    pub artist_mix: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -359,7 +552,7 @@ pub struct PlaylistTrack {
     pub artist: Artist,
     pub artists: Vec<Artist>,
     pub album: Album,
-    pub mixes: Mixes,
+    pub mixes: TrackMixes,
     pub date_added: String,
     pub index: i64,
     pub item_uuid: String,
