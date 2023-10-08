@@ -1,9 +1,4 @@
-use crabidy_core::{
-    clap::{self},
-    clap_serde_derive,
-    serde::Serialize,
-    ClapSerde,
-};
+use crabidy_core::{clap, clap_serde_derive, serde::Serialize, ClapSerde};
 
 #[derive(ClapSerde, Serialize, Debug)]
 #[clap(author, version, about)]

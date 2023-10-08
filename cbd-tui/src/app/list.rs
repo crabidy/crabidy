@@ -1,5 +1,6 @@
 pub use ratatui::widgets::ListState;
 
+// FIXME: Move marking stuff here, to be able to use it in queue as well
 pub trait StatefulList {
     fn get_size(&self) -> usize;
     fn select(&mut self, idx: Option<usize>);
